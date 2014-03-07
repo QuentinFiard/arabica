@@ -91,6 +91,7 @@ StandardXPathFunctionResolver<string_type, string_adaptor>::FunctionLookupTable[
         {"string-length",    impl::CreateFn<impl::StringLengthFn<string_type, string_adaptor>, string_type, string_adaptor> },
         {"normalize-space",  impl::CreateFn<impl::NormalizeSpaceFn<string_type, string_adaptor>, string_type, string_adaptor> },
         {"translate",        impl::CreateFn<impl::TranslateFn<string_type, string_adaptor>, string_type, string_adaptor> },
+        {"matches",          impl::CreateFn<impl::MatchesFn<string_type, string_adaptor>, string_type, string_adaptor> },
         // boolean functions
         {"boolean",          impl::CreateFn<impl::BooleanFn<string_type, string_adaptor>, string_type, string_adaptor> },
         {"not",              impl::CreateFn<impl::NotFn<string_type, string_adaptor>, string_type, string_adaptor> },

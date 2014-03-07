@@ -1,8 +1,9 @@
 #ifndef ARABICA_XPATH_FUNCTION_HPP
 #define ARABICA_XPATH_FUNCTION_HPP
 
-#include <boost/shared_ptr.hpp>
 #include <cmath>
+#include <regex>
+#include <boost/shared_ptr.hpp>
 #include <XML/XMLCharacterClasses.hpp>
 #include <text/UnicodeCharacters.hpp>
 #include <text/normalize_whitespace.hpp>
@@ -31,7 +32,7 @@ public:
 
   virtual ValueType type() const = 0;
 
-  virtual XPathValue_impl<string_type, string_adaptor>* evaluate(const DOM::Node<string_type, string_adaptor>& context, 
+  virtual XPathValue_impl<string_type, string_adaptor>* evaluate(const DOM::Node<string_type, string_adaptor>& context,
                                             const ExecutionContext<string_type, string_adaptor>& executionContext) const = 0;
 
 protected:
@@ -43,7 +44,7 @@ protected:
   {
     return args_[index].evaluate(context, executionContext);
   } // arg
-    
+
   bool argAsBool(size_t index,
                  const DOM::Node<string_type, string_adaptor>& context,
                  const ExecutionContext<string_type, string_adaptor>& executionContext) const
@@ -58,7 +59,7 @@ protected:
     return args_[index].evaluateAsNumber(context, executionContext);
   } // argAsNumber
 
-  string_type argAsString(size_t index, 
+  string_type argAsString(size_t index,
                           const DOM::Node<string_type, string_adaptor>& context,
                           const ExecutionContext<string_type, string_adaptor>& executionContext) const
   {
@@ -156,7 +157,7 @@ protected:
                                                           const ExecutionContext<string_type, string_adaptor>& executionContext) const = 0;
 }; // class NodeSetXPathFunction
 
-namespace impl 
+namespace impl
 {
 
 ////////////////////////////////
@@ -213,7 +214,7 @@ class LocalNameFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  LocalNameFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  LocalNameFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(0, 1, args) { }
 
 protected:
@@ -239,7 +240,7 @@ protected:
         case NAMESPACE_NODE_TYPE:
           return node.hasNamespaceURI() ? node.getLocalName() : node.getNodeName();
         default: // put this in to keep gcc quiet
-          ; 
+          ;
       } // switch ...
     return string_adaptor::empty_string();
   } // evaluate
@@ -251,7 +252,7 @@ class NamespaceURIFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  NamespaceURIFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  NamespaceURIFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(0, 1, args) { }
 
 protected:
@@ -275,19 +276,19 @@ protected:
         case DOM::Node_base::ELEMENT_NODE:
           return node.getNamespaceURI();
         default: // put this in to keep gcc quiet
-          ; 
+          ;
       } // switch ...
     return string_adaptor::empty_string();
   } // evaluate
 }; // class NamespaceURIFn
 
-// string name(node-set?) 
+// string name(node-set?)
 template<class string_type, class string_adaptor>
 class NameFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  NameFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  NameFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(0, 1, args) { }
 
 
@@ -329,14 +330,14 @@ class StringFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  StringFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  StringFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(0, 1, args) { }
 
 protected:
   virtual string_type doEvaluate(const DOM::Node<string_type, string_adaptor>& context,
                                  const ExecutionContext<string_type, string_adaptor>& executionContext) const
   {
-    return (baseT::argCount() > 0) ? baseT::argAsString(0, context, executionContext) : 
+    return (baseT::argCount() > 0) ? baseT::argAsString(0, context, executionContext) :
                                      nodeStringValue<string_type, string_adaptor>(context);
   } // doEvaluate
 }; // class StringFn
@@ -347,7 +348,7 @@ class ConcatFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  ConcatFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  ConcatFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(2, -1, args) { }
 
 protected:
@@ -413,7 +414,7 @@ class SubstringBeforeFn : public StringXPathFunction<string_type, string_adaptor
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  SubstringBeforeFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  SubstringBeforeFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(2, 2, args) { }
 
 protected:
@@ -436,7 +437,7 @@ class SubstringAfterFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  SubstringAfterFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  SubstringAfterFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(2, 2, args) { }
 
 protected:
@@ -460,7 +461,7 @@ class SubstringFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  SubstringFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  SubstringFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(2, 3, args) { }
 
 protected:
@@ -508,7 +509,7 @@ class NormalizeSpaceFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  NormalizeSpaceFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  NormalizeSpaceFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(0, 1, args) { }
 
 protected:
@@ -521,13 +522,13 @@ protected:
   } // evaluate
 }; // class NormalizeSpaceFn
 
-// string translate(string, string, string) 
+// string translate(string, string, string)
 template<class string_type, class string_adaptor>
 class TranslateFn : public StringXPathFunction<string_type, string_adaptor>
 {
   typedef StringXPathFunction<string_type, string_adaptor> baseT;
 public:
-  TranslateFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : 
+  TranslateFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) :
       StringXPathFunction<string_type, string_adaptor>(3, 3, args) { }
 
 protected:
@@ -553,6 +554,136 @@ protected:
 		return string_adaptor::construct(string_adaptor::begin(str), p);
   } // evaluate
 }; // class TranslateFn
+
+// boolean matches(string, string)
+template<class string_type, class string_adaptor>
+class MatchesFn : public BooleanXPathFunction<string_type, string_adaptor>
+{
+  typedef MatchesFn<string_type, string_adaptor> baseT;
+public:
+  MatchesFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : BooleanXPathFunction<string_type, string_adaptor>(2, 3, args) { }
+
+protected:
+  typedef typename string_adaptor::value_type flag_type;
+  virtual bool doEvaluate(const DOM::Node<string_type, string_adaptor>& context,
+                          const ExecutionContext<string_type, string_adaptor>& executionContext) const
+  {
+    const string_type& str = baseT::argAsString(0, context, executionContext);
+    std::wstring wide_pattern = string_adaptor::asStdWString(
+        baseT::argAsString(1, context, executionContext));
+    std::regex_constants::syntax_option_type regex_syntax = std::regex::ECMAScript;
+    if (baseT::argCount() == 3) {
+      const std::wstring &flags = string_adaptor::asStdWString(
+          baseT::argAsString(2, context, executionContext));
+      const wchar_t
+          kIgnoreCaseMode       = L'i',
+          kIgnoreSpaceInPattern = L'x',
+          kMultiLineMode        = L'm',
+          kSingleLineMode       = L's';
+      for (std::size_t i = 0; i < flags.size(); ++i) {
+        const wchar_t flag = flags[i];
+        if (flag == kIgnoreCaseMode) {
+          regex_syntax |= std::regex::icase;
+        } else if (flag == kIgnoreSpaceInPattern) {
+          // We remove all the spaces that are not within character class expressions from the pattern.
+          bool in_character_class = false;
+          std::wstring filtered_pattern;
+          for (std::size_t j = 0; j < wide_pattern.size(); ++j) {
+            if (wide_pattern[j] == L'\\' && j == wide_pattern.size() - 1) {
+              throw SyntaxException("Invalid regular expression");
+            }
+            if (wide_pattern[j] == L'\\') {
+              if (!in_character_class && (
+                      wide_pattern[j + 1] == L'\t' || wide_pattern[j + 1] == L'\r' ||
+                      wide_pattern[j + 1] == L'\n' || wide_pattern[j + 1] == L' ')) {
+                // We remember that the next character is escaped.
+                wide_pattern[j + 1] = L'\\';
+              } else {
+                filtered_pattern.append(wide_pattern, j, 2);
+                ++j;
+              }
+              continue;
+            }
+            if (wide_pattern[j] == L'[' && in_character_class) {
+              throw SyntaxException("Invalid regular expression");
+            }
+            if (wide_pattern[j] == L'[') {
+              in_character_class = true;
+              continue;
+            }
+            if (wide_pattern[j] == L']' && !in_character_class) {
+              throw SyntaxException("Invalid regular expression");
+            }
+            if (wide_pattern[j] == L']') {
+              in_character_class = false;
+              continue;
+            }
+            if (!in_character_class && (
+                    wide_pattern[j] == L'\t' || wide_pattern[j] == L'\r' ||
+                    wide_pattern[j] == L'\n' || wide_pattern[j] == L' ')) continue;
+            filtered_pattern.append(wide_pattern, j, 1);
+          }
+          filtered_pattern.swap(wide_pattern);
+        } else if (flag == kMultiLineMode) {
+          // We replace the $ sign by [$\n].
+          std::wstring filtered_pattern;
+          for (std::size_t j = 0; j < wide_pattern.size(); ++j) {
+            if (wide_pattern[j] == L'\\' && j == wide_pattern.size() - 1) {
+              throw SyntaxException("Invalid regular expression");
+            }
+            if (wide_pattern[j] == L'\\') {
+              filtered_pattern.append(wide_pattern, j, 2);
+              ++j;
+              continue;
+            }
+            if (wide_pattern[j] != L'$') {
+              filtered_pattern.append(wide_pattern, j, 1);
+              continue;
+            }
+            filtered_pattern += L"[$\\n]";
+          }
+          filtered_pattern.swap(wide_pattern);
+        } else if (flag == kSingleLineMode) {
+          // We replace . by [\s\S].
+          std::wstring filtered_pattern;
+          for (std::size_t j = 0; j < wide_pattern.size(); ++j) {
+            if (wide_pattern[j] == L'\\' && j == wide_pattern.size() - 1) {
+              throw SyntaxException("Invalid regular expression");
+            }
+            if (wide_pattern[j] == L'\\') {
+              filtered_pattern.append(wide_pattern, j, 2);
+              ++j;
+              continue;
+            }
+            if (wide_pattern[j] != L'.') {
+              filtered_pattern.append(wide_pattern, j, 1);
+              continue;
+            }
+            filtered_pattern += L"[\\s\\S]";
+          }
+          filtered_pattern.swap(wide_pattern);
+        } else {
+          throw SyntaxException("Unknown regular expression flag: " + wideCharacterToStdString(flag));
+        }
+        // Check for repeated flags.
+        if (flags.find(flag, i + 1) != std::wstring::npos) {
+          throw SyntaxException("Repeated regular expression flag: " + wideCharacterToStdString(flag));
+        }
+      }
+    }
+    const string_type& pattern = string_adaptor::construct_from_utf16(wide_pattern.c_str());
+    return std::regex_search(string_adaptor::begin(str), string_adaptor::end(str),
+                                  std::basic_regex<typename string_adaptor::value_type>(
+                                      string_adaptor::begin(pattern), string_adaptor::end(pattern),
+                                      regex_syntax));
+  } // evaluate
+
+private:
+  // Only used to construct error string.
+  std::string wideCharacterToStdString(wchar_t c) const {
+    return default_string_adaptor<std::wstring>::asStdString(std::wstring(c, 1));
+  }
+}; // class MatchesFn
 
 ///////////////////////////////////////////////////////
 // boolean functions
@@ -619,7 +750,7 @@ protected:
   } // evaluate
 }; // FalseFn
 
-// boolean lang(string) 
+// boolean lang(string)
 
 /////////////////////////////////////////////////
 // number functions
@@ -631,7 +762,7 @@ class NumberFn : public NumericXPathFunction<string_type, string_adaptor>
   typedef NumericXPathFunction<string_type, string_adaptor> baseT;
 public:
   NumberFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : NumericXPathFunction<string_type, string_adaptor>(0, 1, args) { }
-  
+
   virtual double doEvaluate(const DOM::Node<string_type, string_adaptor>& context,
                             const ExecutionContext<string_type, string_adaptor>& executionContext) const
   {
@@ -668,7 +799,7 @@ class FloorFn : public NumericXPathFunction<string_type, string_adaptor>
   typedef NumericXPathFunction<string_type, string_adaptor> baseT;
 public:
   FloorFn(const std::vector<XPathExpression<string_type, string_adaptor> >& args) : NumericXPathFunction<string_type, string_adaptor>(1, 1, args) { }
-  
+
 protected:
   virtual double doEvaluate(const DOM::Node<string_type, string_adaptor>& context,
                             const ExecutionContext<string_type, string_adaptor>& executionContext) const
@@ -693,7 +824,7 @@ protected:
   } // doEvaluate
 }; // class CeilingFn
 
-// number round(number) 
+// number round(number)
 template<class string_type, class string_adaptor>
 class RoundFn : public NumericXPathFunction<string_type, string_adaptor>
 {

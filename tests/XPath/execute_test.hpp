@@ -1869,6 +1869,110 @@ public:
     assertTrue(SA::construct_from_utf8("AAA") == result.asString());
   } // testTranslateFn2
 
+  void testMatchesFn1()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('abc123de', '^[a-z]{3}\\d{3}[a-z]{2}$')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn1
+
+  void testMatchesFn2()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('abc123de', '\\d+')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn2
+
+  void testMatchesFn3()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('abc123de', '^\\d+$')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(false, result.asBool());
+  } // testMatchesFn3
+
+  void testMatchesFn4()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('hello\nworld', '^.*$', 's')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn4
+
+  void testMatchesFn5()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('hello\nworld', '^.*$')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(false, result.asBool());
+  } // testMatchesFn5
+
+  void testMatchesFn6()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('hello\nworld', '^hello$', 'm')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn6
+
+  void testMatchesFn7()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('hello\nworld', '^hello$')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(false, result.asBool());
+  } // testMatchesFn7
+
+  void testMatchesFn8()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('A', 'a', 'i')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn8
+
+  void testMatchesFn9()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('A', 'a')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(false, result.asBool());
+  } // testMatchesFn9
+
+  void testMatchesFn10()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('helloworld', 'hello world', 'x')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn10
+
+  void testMatchesFn11()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('helloworld', 'hello[ ]world', 'x')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(false, result.asBool());
+  } // testMatchesFn11
+
+  void testMatchesFn12()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('hello world', 'hello\\ sworld', 'x')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(true, result.asBool());
+  } // testMatchesFn12
+
+  void testMatchesFn13()
+  {
+    using namespace Arabica::XPath;
+    XPathValue<string_type, string_adaptor> result = parser.evaluate_expr(SA::construct_from_utf8("matches('hello world', 'hello world', 'x')"), document_);
+    assertValuesEqual(Arabica::XPath::BOOL, result.type());
+    assertValuesEqual(false, result.asBool());
+  } // testMatchesFn13
+
   void testLocalNameFn1()
   {
     using namespace Arabica::XPath;
@@ -2717,6 +2821,19 @@ TestSuite* ExecuteTest_suite()
   suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testNormalizeSpaceFn9", &ExecuteTest<string_type, string_adaptor>::testNormalizeSpaceFn9));
   suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testTranslateFn1", &ExecuteTest<string_type, string_adaptor>::testTranslateFn1));
   suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testTranslateFn2", &ExecuteTest<string_type, string_adaptor>::testTranslateFn2));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn1", &ExecuteTest<string_type, string_adaptor>::testMatchesFn1));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn2", &ExecuteTest<string_type, string_adaptor>::testMatchesFn2));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn3", &ExecuteTest<string_type, string_adaptor>::testMatchesFn3));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn4", &ExecuteTest<string_type, string_adaptor>::testMatchesFn4));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn5", &ExecuteTest<string_type, string_adaptor>::testMatchesFn5));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn6", &ExecuteTest<string_type, string_adaptor>::testMatchesFn6));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn7", &ExecuteTest<string_type, string_adaptor>::testMatchesFn7));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn8", &ExecuteTest<string_type, string_adaptor>::testMatchesFn8));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn9", &ExecuteTest<string_type, string_adaptor>::testMatchesFn9));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn10", &ExecuteTest<string_type, string_adaptor>::testMatchesFn10));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn11", &ExecuteTest<string_type, string_adaptor>::testMatchesFn11));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn12", &ExecuteTest<string_type, string_adaptor>::testMatchesFn12));
+  suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testMatchesFn13", &ExecuteTest<string_type, string_adaptor>::testMatchesFn13));
   suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testLocalNameFn1", &ExecuteTest<string_type, string_adaptor>::testLocalNameFn1));
   suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testLocalNameFn2", &ExecuteTest<string_type, string_adaptor>::testLocalNameFn2));
   suiteOfTests->addTest(new TestCaller<ExecuteTest<string_type, string_adaptor> >("testLocalNameFn3", &ExecuteTest<string_type, string_adaptor>::testLocalNameFn3));
