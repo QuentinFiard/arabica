@@ -20,7 +20,7 @@ option(BUILD_ARABICA_EXAMPLES "Build all arabica examples" ON)
 set_property(GLOBAL
   PROPERTY USE_FOLDERS ON)
 
-if (${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
+if ("${CMAKE_CXX_COMPILER}" MATCHES "clang")
   add_definitions("-Wno-parentheses-equality")
 endif()
 
