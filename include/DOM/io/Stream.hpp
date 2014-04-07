@@ -25,6 +25,8 @@
 #include <iostream>
 #include <algorithm>
 #include <map>
+#include <vector>
+#include <DOM/Node.hpp>
 #include <text/UnicodeCharacters.hpp>
 #include <XML/escaper.hpp>
 
