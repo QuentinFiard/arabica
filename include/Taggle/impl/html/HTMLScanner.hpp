@@ -1,7 +1,9 @@
 #ifndef ARABICA_SAX_TAGGLE_HTML_SCANNER_HPP
 #define ARABICA_SAX_TAGGLE_HTML_SCANNER_HPP
   
+#include <locale>
 #include <sstream>
+#include <convert/deletable_facet.hpp>
 #include <SAX/SAXException.hpp>
 #include <SAX/Locator.hpp>
 #include <XML/XMLCharacterClasses.hpp>
@@ -349,23 +351,7 @@ public:
                 // Control becomes space
                 ent = 0x20;
               }
-              else if (ent >= 0xD800 && ent <= 0xDFFF) 
-              {
-                // Surrogates get dropped
-                ent = 0;
-              }
-              else if (ent <= 0xFFFF) 
-              {
-                // BMP character
-                save(ent, h);
-              }
-              else 
-              {
-                // Astral converted to two surrogates
-                ent -= 0x10000;
-                save((ent>>10) + 0xD800, h);
-                save((ent&0x3FF) + 0xDC00, h);
-              }
+              save(ent, h);
               if (ch != ';') 
               {
                 r.unget();
@@ -515,7 +501,8 @@ private:
         outputBuffer_.clear();
       }
     }
-    outputBuffer_ += static_cast<char>(ch);
+    outputBuffer_ += std::wstring_convert<convert::deletable_facet<
+        std::codecvt<char32_t, char, std::mbstate_t> >, char32_t>().to_bytes(ch);
   } // save
 
   static std::string nicechar(int in) 

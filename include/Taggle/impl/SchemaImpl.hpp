@@ -22,7 +22,7 @@ Based on code from John Cowan's super TagSoup package
 class SchemaImpl : public Schema
 {
 private:
-  std::map<std::string, char> entities_;
+  std::map<std::string, int> entities_;
   std::map<std::string, ElementType*> elementTypes_;
 
 	std::string URI_;
@@ -129,7 +129,7 @@ public:
 	**/
 	int getEntity(const std::string& name) const
   {
-    std::map<std::string, char>::const_iterator ent = entities_.find(name);
+    std::map<std::string, int>::const_iterator ent = entities_.find(name);
     if(ent == entities_.end())
       return 0;
 		return ent->second;

@@ -135,6 +135,7 @@ arabica_headers = convert/utf8ucs2codecvt.hpp \
 	convert/impl/iso88591_utf8.hpp \
 	convert/impl/ucs2_utf8.hpp \
 	convert/base64codecvt.hpp \
+	convert/deletable_facet.hpp \
 	convert/ucs2utf8codecvt.hpp \
 	convert/utf16utf8codecvt.hpp \
 	convert/iso88591utf8codecvt.hpp \

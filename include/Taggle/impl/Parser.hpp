@@ -1,9 +1,10 @@
 #ifndef ARABICA_SAX_TAGGLE_PARSER_HPP
 #define ARABICA_SAX_TAGGLE_PARSER_HPP
 
-
+#include <locale>
 #include <map>
 #include <vector>
+#include <convert/deletable_facet.hpp>
 #include <SAX/helpers/DefaultHandler.hpp>
 #include <SAX/XMLReader.hpp>
 #include <SAX/helpers/InputSourceResolver.hpp>
@@ -658,17 +659,11 @@ private:
       {
         // properly terminated ref
         int ent = lookupEntity(dst.substr(refStart, dst.size() - refStart - 1));
-        if(ent > 0xFFFF) 
+        if(ent != 0)
         {
-          ent -= 0x10000;
-          dst[refStart - 1] = (char)((ent>>10) + 0xD800);
-          dst[refStart] = (char)((ent&0x3FF) + 0xDC00);
-          dst.erase(refStart + 1);
-        }
-        else if(ent != 0) 
-        {
-          dst[refStart - 1] = (char)ent;
-          dst.erase(refStart);  
+          dst.resize(refStart - 1);
+          dst += std::wstring_convert<convert::deletable_facet<
+              std::codecvt<char32_t, char, std::mbstate_t> >, char32_t>().to_bytes(ent);
         }
         refStart = std::string::npos;
       }

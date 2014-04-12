@@ -266,6 +266,7 @@ set(PUBLIC_HEADER_FILES
   ../include/io/socket_stream.hpp
   ../include/io/uri.hpp
   ../include/convert/base64codecvt.hpp
+  ../include/convert/deletable_facet.hpp
   ../include/convert/impl/codecvt_specialisations.hpp
   ../include/convert/impl/iso88591_utf8.hpp
   ../include/convert/iso88591utf8codecvt.hpp
