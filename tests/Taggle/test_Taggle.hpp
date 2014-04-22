@@ -30,16 +30,28 @@ class TaggleTest : public TestCase
       std::ostringstream sink;
       Arabica::SAX::Writer<std::string> writer(sink, parser);
 
-      writer.parse(*source("<html><body>woo!<br></body></html>"));
+      writer.parse(*source<std::string>("<html><body>woo!<br></body></html>"));
       assertEquals("<?xml version=\"1.0\"?>\n<html xmlns:html=\"http://www.w3.org/1999/xhtml\">\n  <body>woo!\n    <br clear=\"none\"/>\n  </body>\n</html>\n", sink.str());
     } // senseTest
 
+    void unicodeTest()
+    {
+      Arabica::SAX::Taggle<std::wstring> parser;
+      std::wostringstream sink;
+      Arabica::SAX::Writer<std::wstring> writer(sink, parser);
+
+      writer.parse(*source<std::wstring>("<html><body>收藏品</body></html>"));
+      std::wcout << sink.str();
+      assertTrue(L"<?xml version=\"1.0\"?>\n<html xmlns:html=\"http://www.w3.org/1999/xhtml\">\n  <body>收藏品</body>\n</html>\n" == sink.str());
+    } // senseTest
+
   private:
-    std::auto_ptr<Arabica::SAX::InputSource<std::string> > source(const std::string& str)
+    template <class string_type>
+    std::auto_ptr<Arabica::SAX::InputSource<string_type> > source(const std::string& str)
     {
       std::auto_ptr<std::iostream> ss(new std::stringstream());
       (*ss) << str;
-      return std::auto_ptr<Arabica::SAX::InputSource<std::string> >(new Arabica::SAX::InputSource<std::string>(ss));
+      return std::auto_ptr<Arabica::SAX::InputSource<string_type> >(new Arabica::SAX::InputSource<string_type>(ss));
     } // source
 }; // TaggleTest
 
@@ -48,6 +60,7 @@ TestSuite* Taggle_test_suite()
   TestSuite *suiteOfTests = new TestSuite;
 
   suiteOfTests->addTest(new TestCaller<TaggleTest>("senseTest", &TaggleTest::senseTest));
+  suiteOfTests->addTest(new TestCaller<TaggleTest>("unicodeTest", &TaggleTest::unicodeTest));
 
   return suiteOfTests;
 } // TaggleTest_suite

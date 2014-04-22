@@ -18,9 +18,22 @@ value are not included.
 
 Based on code from John Cowan's super TagSoup package
 */
-class HTMLSchema : public SchemaImpl, private HTMLModels
+template<class string_type,
+         class string_adaptor = Arabica::default_string_adaptor<string_type> >
+class HTMLSchema : public SchemaImpl<string_type, string_adaptor>,
+                   private HTMLModels
 {
 public:
+	typedef SchemaImpl<string_type, string_adaptor> SchemaImplT;
+	using SchemaImplT::M_ANY;
+	using SchemaImplT::M_EMPTY;
+	using SchemaImplT::M_PCDATA;
+	using SchemaImplT::M_ROOT;
+
+	using SchemaImplT::F_RESTART;
+	using SchemaImplT::F_CDATA;
+	using SchemaImplT::F_NOFORCE;
+
 	/**
 	Returns a newly constructed HTMLSchema object independent of
 	any existing ones.
@@ -28,8 +41,8 @@ public:
 	HTMLSchema() 
   {
 		// Start of Schema calls
-	  setURI("http://www.w3.org/1999/xhtml");
-		setPrefix("html");
+	  SchemaImplT::setURI(S("http://www.w3.org/1999/xhtml"));
+	  SchemaImplT::setPrefix(S("html"));
 
     // the original Java method body was generated automatically, 
     // and was huge.  unfortunately, that sent gcc into a spin,
@@ -45,7 +58,33 @@ public:
 
 	} // HTMLSchema
 
+public:
+	void elementType(const std::string& name, int model, int memberOf, int flags)
+	{
+		SchemaImplT::elementType(S(name), model, memberOf, flags);
+	}
+
+	void attribute(const std::string& elemName, const std::string& attrName, const std::string& type, const std::string& value)
+	{
+		SchemaImplT::attribute(S(elemName), S(attrName), S(type), S(value));
+	} // attribute
+
+	void parent(const std::string& name, const std::string& parentName)
+	{
+		SchemaImplT::parent(S(name), S(parentName));
+	}
+
+	void entity(const std::string& name, int value)
+	{
+		SchemaImplT::entity(S(name), value);
+	}
+
 private:
+  static string_type S(const std::string& s)
+  {
+    return string_adaptor::construct_from_utf8(s.c_str());
+  } // S
+
   void elementTypes()
   {
 		elementType("<pcdata>", M_EMPTY, M_PCDATA, 0);

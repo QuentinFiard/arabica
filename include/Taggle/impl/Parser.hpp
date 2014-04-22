@@ -1,13 +1,16 @@
 #ifndef ARABICA_SAX_TAGGLE_PARSER_HPP
 #define ARABICA_SAX_TAGGLE_PARSER_HPP
 
+#include <algorithm>
 #include <locale>
-#include <map>
+#include <memory>
+#include <unordered_map>
 #include <vector>
-#include <convert/deletable_facet.hpp>
+#include <Arabica/StringAdaptor.hpp>
 #include <SAX/helpers/DefaultHandler.hpp>
-#include <SAX/XMLReader.hpp>
 #include <SAX/helpers/InputSourceResolver.hpp>
+#include <SAX/SAXParseException.hpp>
+#include <SAX/XMLReader.hpp>
 #include <text/normalize_whitespace.hpp>
 #include <XML/XMLCharacterClasses.hpp>
 #include <io/uri.hpp>
@@ -24,16 +27,15 @@ The Taggle SAX parser class.
 
 Based on code from John Cowan's super TagSoup package
 **/
-template<class string_type, 
-         class string_adaptor_type = Arabica::default_string_adaptor<string_type> >
-class Taggle  : 
-    public XMLReaderInterface<string_type, string_adaptor_type>,
-    private DefaultHandler<string_type, string_adaptor_type>,
-    private ScanHandler
+template <class string_type,
+          class string_adaptor = Arabica::default_string_adaptor<string_type> >
+class TaggleBase  :
+    public XMLReaderInterface<string_type, string_adaptor>,
+    private DefaultHandler<string_type, string_adaptor>,
+    private ScanHandler<string_type, string_adaptor>
 {
 public:
-  typedef XMLReaderInterface<string_type, string_adaptor_type> XMLReaderT;
-  typedef typename XMLReaderT::string_adaptor string_adaptor;
+  typedef XMLReaderInterface<string_type, string_adaptor> XMLReaderT;
   typedef ContentHandler<string_type, string_adaptor> ContentHandlerT;
   typedef LexicalHandler<string_type, string_adaptor> LexicalHandlerT;
   typedef DeclHandler<string_type, string_adaptor> DeclHandlerT;
@@ -42,6 +44,9 @@ public:
   typedef EntityResolver<string_type, string_adaptor> EntityResolverT;
   typedef InputSource<string_type, string_adaptor> InputSourceT;
   typedef Locator<string_type, string_adaptor> LocatorT;
+  typedef typename string_type::value_type char_type;
+  typedef std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>
+      UTF32Encoder;
 
 
   /**
@@ -238,7 +243,15 @@ private:
 
   static const string_type legal;
 
-  typedef std::map<string_type, bool> FeatureMapT;
+  typedef Attributes<string_type, string_adaptor> AttributesT;
+  typedef AttributesImpl<string_type, string_adaptor> AttributesImplT;
+  typedef std::unordered_map<string_type, bool> FeatureMapT;
+  typedef Element<string_type, string_adaptor> ElementT;
+  typedef HTMLScanner<string_type, string_adaptor> HTMLScannerT;
+  typedef HTMLSchema<string_type, string_adaptor> HTMLSchemaT;
+  typedef ElementType<string_type, string_adaptor> ElementTypeT;
+  typedef Scanner<string_type, string_adaptor> ScannerT;
+  typedef Schema<string_type, string_adaptor> SchemaT;
 
   // XMLReader implementation
   ContentHandlerT* contentHandler_;
@@ -246,21 +259,19 @@ private:
   DTDHandlerT* dtdHandler_;
   ErrorHandlerT* errorHandler_;
   EntityResolverT* entityResolver_;
-  Schema* schema_;
-  bool ownSchema_;
-  Scanner* scanner_;
-  bool ownScanner_;
+  std::unique_ptr<SchemaT> schema_;
+  std::unique_ptr<ScannerT> scanner_;
   FeatureMapT features_;
-  Element newElement_;
-  std::string attributeName_;
+  ElementT newElement_;
+  string_type attributeName_;
   bool doctypeIsPresent_;
-  std::string doctypePublicId_;
-  std::string doctypeSystemId_;
-  std::string doctypeName_;
-  std::string piTarget_;
-  Element stack_;
-  Element saved_;
-  Element pcdata_;
+  string_type doctypePublicId_;
+  string_type doctypeSystemId_;
+  string_type doctypeName_;
+  string_type piTarget_;
+  ElementT stack_;
+  ElementT saved_;
+  ElementT pcdata_;
   int entity_;
 
   // Feature flags.  
@@ -276,27 +287,23 @@ private:
   bool virginStack;
 
 public:
-  Taggle() :
+  TaggleBase() :
     contentHandler_(0),
     lexicalHandler_(0),
     dtdHandler_(0),
     errorHandler_(0),
     entityResolver_(0),
-    schema_(0),
-    ownSchema_(false),
-    scanner_(0),
-    ownScanner_(false),
     features_(initialFeatures()),
-    newElement_(Element::Null),
+    newElement_(ElementT::Null),
     attributeName_(),
     doctypeIsPresent_(false),
     doctypePublicId_(),
     doctypeSystemId_(),
     doctypeName_(),
     piTarget_(),
-    stack_(Element::Null),
-    saved_(Element::Null),
-    pcdata_(Element::Null),
+    stack_(ElementT::Null),
+    saved_(ElementT::Null),
+    pcdata_(ElementT::Null),
     entity_(0),
     namespaces(DEFAULT_NAMESPACES),
     ignoreBogons(DEFAULT_IGNORE_BOGONS),
@@ -315,14 +322,6 @@ public:
     errorHandler_ = this;
     entityResolver_ = this;
   } // Taggle
-
-  ~Taggle()
-  {
-    if(ownSchema_)
-      delete schema_;
-    if(ownScanner_)
-      delete scanner_;
-  } // ~Taggle
 
 private:
   static FeatureMapT initialFeatures() 
@@ -397,7 +396,7 @@ public:
       CDATAElements = value;
   } // setFeature
 
-  typedef typename XMLReaderInterface<string_type, string_adaptor_type>::PropertyBase PropertyBaseT;
+  typedef typename XMLReaderInterface<string_type, string_adaptor>::PropertyBase PropertyBaseT;
   virtual std::auto_ptr<PropertyBaseT> doGetProperty(const string_type& /*name*/)
   {
     return std::auto_ptr<PropertyBaseT>(0);
@@ -539,6 +538,9 @@ public:
     return (lexicalHandler_ == this) ? 0 : lexicalHandler_;
   } // getLexicalHandler
 
+  virtual void convert_stream(
+      std::istream& in, std::basic_stringstream<char_type> &out) = 0;
+
   virtual void parse(InputSourceT& input) 
   {
     setup();
@@ -551,169 +553,188 @@ public:
     } // if(is.resolver() == 0)
 
     contentHandler_->startDocument();
-    scanner_->resetDocumentLocator(string_adaptor::asStdString(input.getPublicId()), string_adaptor::asStdString(input.getSystemId()));
+    scanner_->resetDocumentLocator(input.getPublicId(), input.getSystemId());
 
-    if(dynamic_cast<LocatorT*>(scanner_) != 0) 
-      contentHandler_->setDocumentLocator(*(dynamic_cast<LocatorT*>(scanner_)));
+    LocatorT* document_locator = dynamic_cast<LocatorT*>(scanner_.get());
+    if(document_locator)
+      contentHandler_->setDocumentLocator(*document_locator);
 
-    if(schema_->getURI() != "")
-      contentHandler_->startPrefixMapping(S(schema_->getPrefix()), 
-                                          S(schema_->getURI()));
-    scanner_->scan(*is.resolve(), *this);
+    if(!string_adaptor::empty(schema_->getURI()))
+      contentHandler_->startPrefixMapping(schema_->getPrefix(),
+                                          schema_->getURI());
+
+    std::basic_stringstream<char_type> input_stream;
+    convert_stream(*is.resolve(), input_stream);
+    scanner_->scan(input_stream, *this);
   } // parse
 
 private:
+  static typename string_type::value_type S(char c)
+  {
+    return string_adaptor::construct_from_utf8(&c, 1)[0];
+  } // S
+
+  static string_type S(const std::string& s)
+  {
+    return string_adaptor::construct_from_utf8(s.c_str());
+  } // S
+
+  static string_type S(const char* s)
+  {
+    return string_adaptor::construct_from_utf8(s);
+  } // S
+
+  static wchar_t ToWChar(char_type c) {
+    return string_adaptor::asStdWString(string_type(1, c))[0];
+  }
+
+  static bool is_digit(char_type c) {
+    return Arabica::XML::is_digit(ToWChar(c));
+  }
+
+  static bool is_letter(char_type c) {
+    return Arabica::XML::is_letter(ToWChar(c));
+  }
+
+  static bool is_letter_or_digit(char_type c) {
+    return Arabica::XML::is_letter_or_digit(ToWChar(c));
+  }
+
+  static bool is_space(char_type c) {
+    return Arabica::XML::is_space(ToWChar(c));
+  }
+
   // Sets up instance variables that haven't been set by setFeature
   void setup() 
   {
-    if(schema_ && ownSchema_)
-    {
-      delete schema_;
-      schema_ = 0;
-    } // if ...
-    if(schema_ == 0)
-    {
-      schema_ = new HTMLSchema();
-      ownSchema_ = true;
-    } // if ...
+    schema_.reset(static_cast<SchemaT*>(new HTMLSchemaT()));
+    scanner_.reset(new HTMLScannerT());
 
-    if(scanner_ && ownScanner_)
-    {
-      delete scanner_;
-      scanner_ = 0;
-    } // if ...
-    if(scanner_ == 0) 
-    {
-      scanner_ = new HTMLScanner();
-      ownScanner_ = true;
-    } // if ...
+    stack_ = ElementT(schema_->getElementType(S("<root>")), defaultAttributes);
+    pcdata_ = ElementT(schema_->getElementType(S("<pcdata>")), defaultAttributes);
 
-    stack_ = Element(schema_->getElementType("<root>"), defaultAttributes);
-    pcdata_ = Element(schema_->getElementType("<pcdata>"), defaultAttributes);
-
-    newElement_ = Element::Null;
-    attributeName_ = "";
-    piTarget_ = "";
-    saved_ = Element::Null;
+    newElement_ = ElementT::Null;
+    attributeName_ = string_adaptor::empty_string();
+    piTarget_ = string_adaptor::empty_string();
+    saved_ = ElementT::Null;
     entity_ = 0;
     virginStack = true;
-    doctypeName_ = doctypePublicId_ = doctypeSystemId_ = "";
+    doctypeName_ = doctypePublicId_ = doctypeSystemId_ = string_adaptor::empty_string();
   } // setup
 
   ///////////////////////////////////////////////////////
   // ScanHandler implementation
-  virtual void adup(const std::string& /*buff*/)
+  virtual void adup(const string_type& /*buff*/)
   {
     // std::cerr << "adup(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ == Element::Null || attributeName_ == "") 
+    if(newElement_ == ElementT::Null || string_adaptor::empty(attributeName_))
       return;
-    newElement_.setAttribute(attributeName_, "", attributeName_);
-    attributeName_ = "";
+    newElement_.setAttribute(attributeName_, string_adaptor::empty_string(), attributeName_);
+    attributeName_ = string_adaptor::empty_string();
   } // adup
 
-  virtual void aname(const std::string& buff) 
+  virtual void aname(const string_type& buff)
   {
     // std::cerr << "aname(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ == Element::Null) 
+    if(newElement_ == ElementT::Null)
       return;
     // Currently we don't rely on Schema to canonicalize
     // attribute names.
     attributeName_ = lower_case(makeName(buff));
   } // aname
 
-  virtual void aval(const std::string& buff) 
+  virtual void aval(const string_type& buff)
   {
     // std::cerr << "aval(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ == Element::Null || attributeName_ == "") 
+    if(newElement_ == ElementT::Null || string_adaptor::empty(attributeName_))
       return;
-    std::string value = expandEntities(buff);
-    newElement_.setAttribute(attributeName_, "", value);
-    attributeName_ = "";
+    string_type value = expandEntities(buff);
+    newElement_.setAttribute(attributeName_, string_adaptor::empty_string(), value);
+    attributeName_ = string_adaptor::empty_string();
   } // aval
 
   // Expand entity references in attribute values selectively.
   // Currently we expand a reference iff it is properly terminated
   // with a semicolon.
-  std::string expandEntities(std::string src) 
+  string_type expandEntities(string_type src)
   {
-    size_t refStart = std::string::npos;
-    std::string dst;
-    for(std::string::const_iterator i = src.begin(), ie = src.end(); i != ie; ++i)
+    UTF32Encoder unicode_encoder;
+    size_t refStart = string_adaptor::npos();
+    string_type dst;
+    for(auto i = string_adaptor::begin(src), ie = string_adaptor::end(src); i != ie; ++i)
     {
-      char ch = *i;
-      dst.push_back(ch);
-      if(ch == '&' && refStart == std::string::npos)
+      char_type ch = *i;
+      string_adaptor::append(dst, ch);
+      if(ch == S('&') && refStart == string_adaptor::npos())
       {
         // start of a ref excluding &
-        refStart = dst.length();
+        refStart = string_adaptor::length(dst);
       }
-      else if(refStart == std::string::npos) 
+      else if(refStart == string_adaptor::npos())
       {
         // not in a ref
       }
-      else if(Arabica::XML::is_letter_or_digit(ch) || ch == '#') 
+      else if(Arabica::XML::is_letter_or_digit(ch) || ch == S('#'))
       {
         // valid entity char
       }
-      else if(ch == ';') 
+      else if(ch == S(';'))
       {
         // properly terminated ref
-        int ent = lookupEntity(dst.substr(refStart, dst.size() - refStart - 1));
+        int ent = lookupEntity(string_adaptor::substr(dst, refStart, dst.size() - refStart - 1));
         if(ent != 0)
         {
-          dst.resize(refStart - 1);
-          dst += std::wstring_convert<convert::deletable_facet<
-              std::codecvt<char32_t, char, std::mbstate_t> >, char32_t>().to_bytes(ent);
+          string_adaptor::resize(dst, refStart - 1);
+          dst += S(unicode_encoder.to_bytes(ent));
         }
-        refStart = std::string::npos;
+        refStart = string_adaptor::npos();
       }
       else 
       {
         // improperly terminated ref
-        refStart = std::string::npos;
+        refStart = string_adaptor::npos();
       } // if ...
     } // for ...
-    return std::string(dst, 0, dst.size());
+    return string_adaptor::construct(dst);
   } // expandEntities
 
-  virtual void entity(const std::string& buff) 
+  virtual void entity(const string_type& buff)
   {
     entity_ = lookupEntity(buff);
   } // entity
 
   // Process numeric character references,
   // deferring to the schema for named ones.
-  int lookupEntity(const std::string& buff) 
+  int lookupEntity(const string_type& buff)
   {
     int result = 0;
-    if(buff.length() < 1) 
+    if(string_adaptor::empty(buff))
       return result;
 
-    if(buff[0] == '#') 
+    if(buff[0] == S('#'))
     {
-      const char* b = buff.c_str();
-      char* end;
-      if(buff.length() > 1 && (buff[1] == 'x' || buff[1] == 'X')) 
-        return strtol(b + 2, &end, 16);
-      return strtol(b + 1, &end, 10);
+      const char *b = string_adaptor::asStdString(buff).c_str();
+      if(string_adaptor::length(buff) > 1 && (buff[1] == S('x') || buff[1] == S('X')))
+        return strtol(b + 2, NULL, 16);
+      return strtol(b + 1, NULL, 10);
     }
     return schema_->getEntity(buff);
   } // lookupEntity
 
-  virtual void eof(const std::string& /*buff*/) 
+  virtual void eof(const string_type& /*buff*/)
   {
     if(virginStack) 
       rectify(pcdata_);
-    while (stack_.next() != Element::Null) 
+    while (stack_.next() != ElementT::Null)
     {
       pop();
     }
-    if(schema_->getURI() != "")
-      contentHandler_->endPrefixMapping(S(schema_->getPrefix()));
+    if(!string_adaptor::empty(schema_->getURI()))
+      contentHandler_->endPrefixMapping(schema_->getPrefix());
     contentHandler_->endDocument();
   } // eof
 
-  virtual void etag(const std::string& buff) 
+  virtual void etag(const string_type& buff)
   {
     // std::cerr << "etag(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
     if(etag_cdata(buff))
@@ -721,50 +742,37 @@ private:
     etag_basic(buff);
   } // etag
 
-  bool etag_cdata(const std::string& buff) 
+  bool etag_cdata(const string_type& buff)
   {
-    std::string currentName = stack_.name();
+    string_type currentName = stack_.name();
+    if (!CDATAElements || !(stack_.flags() & SchemaT::F_CDATA)) return false;
     // If this is a CDATA element and the tag doesn't match,
     // or isn't properly formed (junk after the name),
     // restart CDATA mode and process the tag as characters.
-    if(CDATAElements && (stack_.flags() & Schema::F_CDATA) != 0) 
-    {
-      bool realTag = (buff.length() == currentName.length());
-      if(realTag) 
-      {
-        std::string buffl = lower_case(buff);
-        std::string currentl = lower_case(currentName);
-        for (size_t i = 0; i < buffl.length(); ++i) 
-        {
-          if(buffl[i] != currentl[i]) 
-          {
-            realTag = false;
-            break;
-          } // if ...
-        } // for ...
-      } // if ...
-      if(!realTag) 
-      {
-        contentHandler_->characters(S("</"));
-        contentHandler_->characters(S(buff));
-        contentHandler_->characters(S(">"));
-        scanner_->startCDATA();
-        return true;
-      } // if ...
-    } // if ...
-    return false;
+    if(string_adaptor::length(buff) ==
+       string_adaptor::length(currentName)) {
+      string_type buffl = lower_case(buff);
+      string_type currentl = lower_case(currentName);
+      if (std::equal(string_adaptor::begin(buffl), string_adaptor::end(buffl),
+                     string_adaptor::begin(currentl))) return false;
+    }
+    contentHandler_->characters(S("</"));
+    contentHandler_->characters(buff);
+    contentHandler_->characters(S(">"));
+    scanner_->startCDATA();
+    return true;
   } // etag_cdata
 
-  void etag_basic(const std::string& buff) 
+  void etag_basic(const string_type& buff)
   {
-    newElement_ = Element::Null;
-    std::string name;
-    if(!buff.empty())
+    newElement_ = ElementT::Null;
+    string_type name;
+    if(!string_adaptor::empty(buff))
     {
       // Canonicalize case of name
       name = makeName(buff);
-      ElementType& type = schema_->getElementType(name);
-      if(type == ElementType::Null) 
+      ElementTypeT& type = schema_->getElementType(name);
+      if(type == ElementTypeT::Null)
         return;  // mysterious end-tag
       name = type.name();
     }
@@ -773,19 +781,20 @@ private:
       name = stack_.name();
     }
 
-    Element sp = Element::Null;
+    ElementT sp = ElementT::Null;
     bool inNoforce = false;
-    for (sp = stack_; sp != Element::Null; sp = sp.next()) 
+    for (sp = stack_; sp != ElementT::Null; sp = sp.next())
     {
       if(sp.name() == name) 
         break;
-      if((sp.flags() & Schema::F_NOFORCE) != 0) 
+      if((sp.flags() & SchemaT::F_NOFORCE) != 0)
         inNoforce = true;
     } // for ...
 
-    if(sp == Element::Null)
+    if(sp == ElementT::Null)
       return;    // Ignore unknown etags
-    if(sp.next() == Element::Null || sp.next().next() == Element::Null) 
+    if(sp.next() == ElementT::Null ||
+       sp.next().next() == ElementT::Null)
       return;
     if(inNoforce) 
     {    // inside an F_NOFORCE element?
@@ -800,17 +809,19 @@ private:
     // pop any preclosed elements now at the top
     while (stack_.isPreclosed()) 
       pop();
-    restart(Element::Null);
+    restart(ElementT::Null);
   } // etag_basic
 
   // Push restartables on the stack if possible
   // e is the next element to be started, if we know what it is
-  void restart(Element e) 
+  void restart(ElementT e)
   {
-    while (saved_ != Element::Null && stack_.canContain(saved_) &&
-        (e == Element::Null || saved_.canContain(e))) 
+    while (saved_ != ElementT::Null &&
+           stack_.canContain(saved_) &&
+           (e == ElementT::Null ||
+            saved_.canContain(e)))
     {
-      Element next = saved_.next();
+      ElementT next = saved_.next();
       push(saved_);
       saved_ = next;
     } // while ...
@@ -819,28 +830,28 @@ private:
   // Pop the stack irrevocably
   void pop() 
   {
-    if(stack_ == Element::Null) 
+    if(stack_ == ElementT::Null)
       return;    // empty stack
-    std::string name = stack_.name();
-    std::string localName = stack_.localName();
-    std::string namespaceName = stack_.namespaceName();
-    std::string prefix = prefixOf(name);
+    string_type name = stack_.name();
+    string_type localName = stack_.localName();
+    string_type namespaceName = stack_.namespaceName();
+    string_type prefix = prefixOf(name);
 
     if(!namespaces) 
-      namespaceName = localName = "";
-    contentHandler_->endElement(S(namespaceName), 
-                                S(localName), 
-                                S(name));
+      namespaceName = localName = string_adaptor::empty_string();
+    contentHandler_->endElement(namespaceName,
+                                localName,
+                                name);
     if(foreign(prefix, namespaceName)) 
-      contentHandler_->endPrefixMapping(S(prefix));
+      contentHandler_->endPrefixMapping(prefix);
 
-    const Attributes<std::string>& atts = stack_.atts();
+    const AttributesT& atts = stack_.atts();
     for (int i = atts.getLength() - 1; i >= 0; i--) 
     {
-      std::string attNamespace = atts.getURI(i);
-      std::string attPrefix = prefixOf(atts.getQName(i));
+      string_type attNamespace = atts.getURI(i);
+      string_type attPrefix = prefixOf(atts.getQName(i));
       if(foreign(attPrefix, attNamespace)) 
-        contentHandler_->endPrefixMapping(S(attPrefix));
+        contentHandler_->endPrefixMapping(attPrefix);
     } // for ...
     stack_ = stack_.next();
   } // pop
@@ -848,9 +859,9 @@ private:
   // Pop the stack restartably
   void restartablyPop() 
   {
-    Element popped = stack_;
+    ElementT popped = stack_;
     pop();
-    if(restartElements && (popped.flags() & Schema::F_RESTART) != 0) 
+    if(restartElements && (popped.flags() & SchemaT::F_RESTART) != 0)
     {
       popped.anonymize();
       popped.setNext(saved_);
@@ -859,60 +870,61 @@ private:
   } // restartablyPop
 
   // Push element onto stack
-  void push(Element e) 
+  void push(ElementT e)
   {
-    std::string name = e.name();
-    std::string localName = e.localName();
-    std::string namespaceName = e.namespaceName();
-    std::string prefix = prefixOf(name);
+    string_type name = e.name();
+    string_type localName = e.localName();
+    string_type namespaceName = e.namespaceName();
+    string_type prefix = prefixOf(name);
 
     e.clean();
     if(!namespaces) 
-      namespaceName = localName = "";
+      namespaceName = localName = string_adaptor::empty_string();
     if(virginStack && (lower_case(localName) == lower_case(doctypeName_))) 
-      entityResolver_->resolveEntity(S(doctypePublicId_), S(doctypeSystemId_));
+      entityResolver_->resolveEntity(doctypePublicId_, doctypeSystemId_);
     if(foreign(prefix, namespaceName)) 
-      contentHandler_->startPrefixMapping(S(prefix), S(namespaceName));
+      contentHandler_->startPrefixMapping(prefix, namespaceName);
     
-    AttributesImpl<string_type, string_adaptor> atts;
+    AttributesImplT atts;
     int len = e.atts().getLength();
     for (int i = 0; i != len; ++i) 
     {
-      std::string attNamespace = e.atts().getURI(i);
-      std::string attPrefix = prefixOf(e.atts().getQName(i));
+      string_type attNamespace = e.atts().getURI(i);
+      string_type attPrefix = prefixOf(e.atts().getQName(i));
       if(foreign(attPrefix, attNamespace)) 
-        contentHandler_->startPrefixMapping(S(attPrefix), S(attNamespace));
+        contentHandler_->startPrefixMapping(attPrefix, attNamespace);
 
-      atts.addAttribute(S(e.atts().getURI(i)),
-                        S(e.atts().getLocalName(i)),
-                        S(e.atts().getQName(i)),
-                        S(e.atts().getType(i)),
-                        S(e.atts().getValue(i)));
+      atts.addAttribute(e.atts().getURI(i),
+                        e.atts().getLocalName(i),
+                        e.atts().getQName(i),
+                        e.atts().getType(i),
+                        e.atts().getValue(i));
     } // for ...
-    contentHandler_->startElement(S(namespaceName), S(localName), S(name), atts);
+    contentHandler_->startElement(namespaceName, localName, name, atts);
 
     e.setNext(stack_);
     stack_ = e;
     virginStack = false;
-    if(CDATAElements && (stack_.flags() & Schema::F_CDATA) != 0) 
+    if(CDATAElements && (stack_.flags() & SchemaT::F_CDATA) != 0)
       scanner_->startCDATA();
   } // push 
 
   // Get the prefix from a QName
-  std::string prefixOf(std::string name) 
+  string_type prefixOf(const string_type &name)
   {
-    size_t i = name.find(':');
-    std::string prefix = "";
-    if(i != std::string::npos) 
-      prefix = name.substr(0, i);
+    size_t i = string_adaptor::find(name, S(':'));
+    string_type prefix;
+    if(i != string_adaptor::npos())
+      prefix = string_adaptor::substr(name, 0, i);
     return prefix;
   } // prefixOf
 
   // Return true if we have a foreign name
-  bool foreign(std::string prefix, std::string namespaceName) 
+  bool foreign(const string_type &prefix, const string_type &namespaceName)
   {
-    bool foreign = !((prefix == "") || (namespaceName == "") || (namespaceName == schema_->getURI()));
-    return foreign;
+    return !(
+        string_adaptor::empty(prefix) || string_adaptor::empty(namespaceName) ||
+        namespaceName == schema_->getURI());
   } // foreign
 
   /**
@@ -926,14 +938,14 @@ private:
    *  ExternalID  ::= 'SYSTEM' S SystemLiteral | 'PUBLIC' S PubidLiteral S SystemLiteral
    */
 
-  virtual void decl(const std::string& buff) 
+  virtual void decl(const string_type& buff)
   {
     // std::cerr << "decl(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    std::string name;
-    std::string systemid;
-    std::string publicid;
-    std::vector<std::string> v = split(buff);
-    if((v.size() > 0) && ("DOCTYPE" == v[0])) 
+    string_type name;
+    string_type systemid;
+    string_type publicid;
+    std::vector<string_type> v = split(buff);
+    if(v.size() > 0 && S("DOCTYPE") == v[0])
     {
       if(doctypeIsPresent_) 
         return;    // one doctype only!
@@ -941,62 +953,61 @@ private:
       if(v.size() > 1) 
       {
         name = v[1];
-        if(v.size()>3 && "SYSTEM" == v[2]) 
+        if(v.size()>3 && S("SYSTEM") == v[2])
         {
           systemid = v[3];
         }
-        else if(v.size() > 3 && "PUBLIC" == v[2]) 
+        else if(v.size() > 3 && S("PUBLIC") == v[2])
         {
           publicid = v[3];
           if(v.size() > 4) 
           {
             systemid = v[4];
           }
-          else 
-          {
-            systemid = "";
-          }
         }
       }
     }
     publicid = trimquotes(publicid);
     systemid = trimquotes(systemid);
-    if(name != "") 
+    if(!string_adaptor::empty(name))
     {
       publicid = cleanPublicid(publicid);
-      lexicalHandler_->startDTD(S(name), S(publicid), S(systemid));
+      lexicalHandler_->startDTD(name, publicid, systemid);
       lexicalHandler_->endDTD();
       doctypeName_ = name;
       doctypePublicId_ = publicid;
-      if(dynamic_cast<LocatorT*>(scanner_))
+      LocatorT* document_locator = dynamic_cast<LocatorT*>(scanner_.get());
+      if(document_locator)
       {    // Must resolve systemid
-        doctypeSystemId_  = string_adaptor::asStdString(dynamic_cast<LocatorT*>(scanner_)->getSystemId());
-        doctypeSystemId_ = Arabica::io::URI(doctypeSystemId_, systemid).as_string();
+        doctypeSystemId_  = document_locator->getSystemId();
+        doctypeSystemId_ = string_adaptor::construct_from_utf8(
+            Arabica::io::URI(
+                string_adaptor::asStdString(doctypeSystemId_),
+                string_adaptor::asStdString(systemid)).as_string().c_str());
       } // if ...
     } // if ...
   } // decl
 
   // If the String is quoted, trim the quotes.
-  static std::string trimquotes(const std::string& in) 
+  static string_type trimquotes(const string_type& in)
   {
-    size_t length = in.length();
+    size_t length = string_adaptor::length(in);
     if(length == 0) 
       return in;
-    char s = in[0];
-    char e = in[length - 1];
-    if(s == e && (s == '\'' || s == '"')) 
-      return in.substr(1, length - 1);
+    char_type s = in[0], e = in[length - 1];
+    if(s == e && (s == S('\'') || s == S('"')))
+      return string_adaptor::substr(in, 1, length - 1);
     return in;
   } // trimquotes
 
   // Split the supplied String into words or phrases seperated by spaces.
   // Recognises quotes around a phrase and doesn't split it.
-  static std::vector<std::string> split(const std::string& val) 
+  static std::vector<string_type> split(const string_type& val)
   {
-    std::vector<std::string> splits;
+    std::vector<string_type> splits;
 
-    std::string v = Arabica::text::normalize_whitespace<std::string, Arabica::default_string_adaptor<std::string> >(val);
-    if(v.length() == 0) 
+    string_type v = Arabica::text::normalize_whitespace<string_type, string_adaptor>(val);
+    if(string_adaptor::empty(v))
     {
       splits.push_back(v);
       return splits;
@@ -1006,53 +1017,54 @@ private:
     size_t e = 0;
     bool sq = false;  // single quote
     bool dq = false;  // double quote
-    char lastc = 0;
-    size_t len = v.length();
+    char_type lastc = 0;
+    size_t len = string_adaptor::length(v);
     for(e=0; e < len; ++e) 
     {
-      char c = v[e];
-      if(!dq && c == '\'' && lastc != '\\') 
+      char_type c = v[e];
+      if(!dq && c == S('\'') && lastc != S('\\'))
       {
 			  sq = !sq;
-        if(s == std::string::npos) 
+        if(s == string_adaptor::npos())
           s = e;
       }
-      else if(!sq && c == '\"' && lastc != '\\') 
+      else if(!sq && c == S('\"') && lastc != S('\\'))
       {
 			  dq = !dq;
-			  if(s == std::string::npos) 
+			  if(s == string_adaptor::npos())
           s = e;
       }
       else if(!sq && !dq) 
       {
-        if(Arabica::XML::is_space(c)) 
+        if(is_space(c))
         {
-          splits.push_back(v.substr(s, e));
-				  s = std::string::npos;
+          splits.push_back(string_adaptor::substr(v, s, e));
+				  s = string_adaptor::npos();
 				}
-        else if(s == std::string::npos && c != ' ') 
+        else if(s == string_adaptor::npos() && c != S(' '))
         {
           s = e;
         } 
       }
       lastc = c;
     } // for ...
-    splits.push_back(v.substr(s, e));
+    splits.push_back(string_adaptor::substr(v, s, e));
 
     return splits;
   } // split
 
   // Replace junk in publicids with spaces
-  std::string cleanPublicid(const std::string& src) 
+  string_type cleanPublicid(const string_type& src)
   {
-    std::string dst;
+    string_type dst;
     bool suppressSpace = true;
-    for(std::string::const_iterator i = src.begin(), ie = src.end(); i != ie; ++i)
+    for(typename string_type::const_iterator i = string_adaptor::begin(src),
+        ie = string_adaptor::end(src); i != ie; ++i)
     {
-      if(legal.find(*i) != std::string::npos) 
+      if(string_adaptor::find(legal, *i) != string_adaptor::npos())
       {   
         // legal but not whitespace
-        dst.push_back(*i);
+        string_adaptor::append(dst, *i);
         suppressSpace = false;
       }
       else if(suppressSpace) 
@@ -1061,39 +1073,39 @@ private:
       }
       else 
       {
-        dst.push_back(' ');
+        string_adaptor::append(dst, S(' '));
         suppressSpace = true;
       }
     }
     return dst;
   } // cleanPublicId
 
-  virtual void gi(const std::string& buff) 
+  virtual void gi(const string_type& buff)
   {
     // std::cerr << "gi(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ != Element::Null) 
+    if(newElement_ != ElementT::Null)
       return;
-    std::string name = makeName(buff);
-    if(name == "") 
+    string_type name = makeName(buff);
+    if(string_adaptor::empty(name))
       return;
-    ElementType* type = &schema_->getElementType(name);
-    if(*type == ElementType::Null) 
+    ElementTypeT* type = &schema_->getElementType(name);
+    if(*type == ElementTypeT::Null)
     {
       // Suppress unknown elements if ignore-bogons is on
       if(ignoreBogons) 
         return;
-      int bogonModel = bogonsEmpty ? Schema::M_EMPTY : Schema::M_ANY;
-      int bogonMemberOf = rootBogons ? Schema::M_ANY : (Schema::M_ANY & ~Schema::M_ROOT);
+      int bogonModel = bogonsEmpty ? SchemaT::M_EMPTY : SchemaT::M_ANY;
+      int bogonMemberOf = rootBogons ? SchemaT::M_ANY : (SchemaT::M_ANY & ~SchemaT::M_ROOT);
       schema_->elementType(name, bogonModel, bogonMemberOf, 0);
       if(!rootBogons) 
         schema_->parent(name, schema_->rootElementType().name());
       type = &schema_->getElementType(name);
     } // if ...
 
-    newElement_ = Element(*type, defaultAttributes);
+    newElement_ = ElementT(*type, defaultAttributes);
   } // gi
 
-  virtual void cdsect(const std::string& buff) 
+  virtual void cdsect(const string_type& buff)
   {
     // std::cerr << "cdsect(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
     lexicalHandler_->startCDATA();
@@ -1101,76 +1113,77 @@ private:
     lexicalHandler_->endCDATA();
   } // cdsect
   
-  virtual void pcdata(const std::string& buff) 
+  virtual void pcdata(const string_type& buff)
   {
     // std::cerr << "pcdata(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(buff.empty())
+    if(string_adaptor::empty(buff))
       return;
     bool allWhite = true;
-    for (std::string::const_iterator i = buff.begin(), ie = buff.end(); i != ie; ++i)
+    for (typename string_type::const_iterator i = buff.begin(), ie = buff.end(); i != ie; ++i)
     {
-      if(!Arabica::XML::is_space(*i)) 
+      if(!is_space(*i))
         allWhite = false;
     } // for ...
     if(allWhite && !stack_.canContain(pcdata_)) 
     {
       if(ignorableWhitespace) 
-        contentHandler_->ignorableWhitespace(S(buff));
+        contentHandler_->ignorableWhitespace(buff);
     }
     else 
     {
       rectify(pcdata_);
-      contentHandler_->characters(S(buff));
+      contentHandler_->characters(buff);
     } // if ...
   } // pcdata
 
-  virtual void pitarget(const std::string& buff) 
+  virtual void pitarget(const string_type& buff)
   {
     // std::cerr << "pitarget(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ != Element::Null) 
+    if(newElement_ != ElementT::Null)
       return;
-    std::string name = makeName(buff);
-    size_t colon = name.find(':');
-    while(colon != std::string::npos)
+    string_type name = makeName(buff);
+    size_t colon = string_adaptor::find(name, S(':'));
+    while(colon != string_adaptor::npos())
     {
-      name[colon] = '_';
-      colon = name.find(':');
+      name[colon] = S('_');
+      colon = string_adaptor::find(name, S(':'));
     } // while
     piTarget_ = name;
   } // pitarget
 
-  virtual void pi(const std::string& buff) 
+  virtual void pi(const string_type& buff)
   {
     // std::cerr << "pi(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ != Element::Null || piTarget_ == "") 
+    if(newElement_ != ElementT::Null ||
+       string_adaptor::empty(piTarget_))
       return;
-    if("xml" == lower_case(piTarget_)) 
+    if(S("xml") == lower_case(piTarget_))
       return;
-    size_t length = buff.length();
-    if((length > 0) && (buff[length - 1] == '?')) 
+    size_t length = string_adaptor::length(buff);
+    if((length > 0) && (buff[length - 1] == S('?')))
       length--;  // remove trailing ?
-    contentHandler_->processingInstruction(S(piTarget_),
-                                           S(buff.substr(0, length)));
-    piTarget_ = "";
+    contentHandler_->processingInstruction(piTarget_,
+                                           string_adaptor::substr(buff, 0, length));
+    piTarget_ = string_adaptor::empty_string();
   } // pi
 
-  virtual void stagc(const std::string& buff) 
+  virtual void stagc(const string_type& buff)
   {
     // std::cerr << "stagc(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ == Element::Null) 
+    if(newElement_ == ElementT::Null)
       return;
     rectify(newElement_);
-    if(stack_.model() == Schema::M_EMPTY) 
+    if(stack_.model() == SchemaT::M_EMPTY)
     {
       // Force an immediate end tag
       etag_basic(buff);
     } // if ...
   } // stagc
 
-  virtual void stage(const std::string& buff) 
+  virtual void stage(const string_type& buff)
   {
     // std::cerr << "stage(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    if(newElement_ == Element::Null) 
+    if(newElement_ == ElementT::Null)
       return;
     rectify(newElement_);
     // Force an immediate end tag
@@ -1178,50 +1191,52 @@ private:
   } // stage
 
   // Comment buffer is twice the size of the output buffer
-  virtual void cmnt(const std::string& buff) 
+  virtual void cmnt(const string_type& buff)
   {
     // std::cerr << "cmnt(\"" << buff.substr(offset, length) << "\", " << offset << ", " << length << ")" << std::endl;
-    lexicalHandler_->comment(S(buff));
+    lexicalHandler_->comment(buff);
   } // cmnt
 
   // Rectify the stack, pushing and popping as needed
   // so that the argument can be safely pushed
-  void rectify(Element e) 
+  void rectify(ElementT e)
   {
-    Element sp = Element::Null;
+    ElementT sp = ElementT::Null;
     while (true) 
     {
-      for (sp = stack_; sp != Element::Null; sp = sp.next()) 
+      for (sp = stack_; sp != ElementT::Null; sp = sp.next())
       {
         if(sp.canContain(e)) 
           break;
       } // for ...
-      if(sp != Element::Null) 
+      if(sp != ElementT::Null)
         break;
-      ElementType& parentType = e.parent();
-      if(parentType == ElementType::Null) 
+      ElementTypeT& parentType = e.parent();
+      if(parentType == ElementTypeT::Null)
         break;
-      Element parent = Element(parentType, defaultAttributes);
+      ElementT parent = ElementT(parentType, defaultAttributes);
       parent.setNext(e);
       e = parent;
     } // while ...
-    if(sp == Element::Null) 
+    if(sp == ElementT::Null)
       return;    // don't know what to do
     while (stack_ != sp) 
     {
-      if(stack_ == Element::Null || stack_.next() == Element::Null || stack_.next().next() == Element::Null) 
+      if(stack_ == ElementT::Null ||
+         stack_.next() == ElementT::Null ||
+         stack_.next().next() == ElementT::Null)
         break;
       restartablyPop();
     } // while ...
-    while (e != Element::Null) 
+    while (e != ElementT::Null)
     {
-      Element nexte = e.next();
-      if(e.name() != "<pcdata>") 
+      ElementT nexte = e.next();
+      if(e.name() != S("<pcdata>"))
         push(e);
       e = nexte;
       restart(e);
     } // while ...
-    newElement_ = Element::Null;
+    newElement_ = ElementT::Null;
   } // rectify
 
   virtual int getEntity() 
@@ -1232,150 +1247,161 @@ private:
   // Return the argument as a valid XML name
   // This no longer lowercases the result: we depend on Schema to
   // canonicalize case.
-  std::string makeName(const std::string& buff) 
+  string_type makeName(const string_type& buff)
   {
-    std::string dst;
+    string_type dst;
     bool seenColon = false;
     bool start = true;
 //    String src = new String(buff, offset, length); // DEBUG
-    for(std::string::const_iterator ch = buff.begin(), che = buff.end(); ch != che; ++ch)
+    for(auto ch = string_adaptor::begin(buff), che = string_adaptor::end(buff);
+        ch != che; ++ch)
     {
-      if(Arabica::XML::is_letter(*ch) || *ch == '_') 
+      if(is_letter(*ch) || *ch == S('_'))
       {
         start = false;
-        dst.push_back(*ch);
+        string_adaptor::append(dst, *ch);
       }
-      else if(Arabica::XML::is_digit(*ch) || *ch == '-' || *ch == '.') 
+      else if(is_digit(*ch) || *ch == S('-') || *ch == S('.'))
       {
         if(start) 
-          dst.push_back('_');
+          string_adaptor::append(dst, S('_'));
         start = false;
-        dst.push_back(*ch);
+        string_adaptor::append(dst, *ch);
       }
-      else if(*ch == ':' && !seenColon) 
+      else if(*ch == S(':') && !seenColon)
       {
         seenColon = true;
         if(start) 
-          dst.push_back('_');
+          string_adaptor::append(dst, S('_'));
         start = true;
-        dst.push_back(translateColons ? '_' : *ch);
+        string_adaptor::append(dst, translateColons ? S('_') : *ch);
       } 
     } // for ...
-    size_t dstLength = dst.length();
-    if(dstLength == 0 || dst[dstLength - 1] == ':') 
-      dst.push_back('_');
+    size_t dstLength = string_adaptor::length(dst);
+    if(dstLength == 0 || dst[dstLength - 1] == S(':'))
+      string_adaptor::append(dst, S('_'));
     return dst;
   } // makeName
 
-  static std::string lower_case(const std::string& str) 
+  static string_type lower_case(const string_type& str)
   {
-    std::string lower;
-    std::transform(str.begin(), str.end(), std::back_inserter(lower), (int(*)(int))std::tolower);
-    return lower;
+    std::wstring lower = string_adaptor::asStdWString(str);
+    std::transform(lower.begin(), lower.end(), lower.begin(), std::towlower);
+    return string_adaptor::construct_from_utf16(lower.c_str(), lower.size());
   } // lower_case
 
   void reportError(const std::string& message, bool fatal)
   {
-    SAXParseException<string_type> e(message,
-                                     S("<public-id>"),
-                                     S("<system-id>"),
-                                     -1,
-                                     -1);
+    SAXParseException<string_type, string_adaptor> e(
+        message, S("<public-id>"), S("<system-id>"), -1, -1);
     if(fatal)
       errorHandler_->fatalError(e);
     else
       errorHandler_->error(e);
   } // reportError
-
-public:
-  static string_type S(const std::string& s)
-  {
-    return string_adaptor::construct_from_utf8(s.c_str());
-  } // S
- 
-  static string_type S(const char* s)
-  {
-    return string_adaptor::construct_from_utf8(s);
-  } // S
 }; // class Taggle
 
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_NAMESPACES = true;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_IGNORE_BOGONS = false;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_BOGONS_EMPTY = false;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_ROOT_BOGONS = true;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_DEFAULT_ATTRIBUTES = true;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_TRANSLATE_COLONS = false;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_RESTART_ELEMENTS = true;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_IGNORABLE_WHITESPACE = false;
-template<class string_type, class string_adaptor_type>
-bool Taggle<string_type, string_adaptor_type>::DEFAULT_CDATA_ELEMENTS = true;
+template <class string_type,
+          class string_adaptor = Arabica::default_string_adaptor<string_type> >
+class Taggle : public TaggleBase<string_type, string_adaptor> {
+private:
+  typedef typename string_type::value_type char_type;
+  typedef std::wstring_convert<std::codecvt_utf8<char_type>, char_type>
+      UnicodeEncoder;
+  virtual void convert_stream(
+      std::istream& in, std::basic_stringstream<char_type> &out) {
+    std::stringstream byte_stream;
+    byte_stream << in.rdbuf();
+    out << UnicodeEncoder().from_bytes(byte_stream.str());
+  }
+};
 
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::namespacesFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/namespaces");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::namespacePrefixesFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/namespace-prefixes");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::externalGeneralEntitiesFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/external-general-entities");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::externalParameterEntitiesFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/external-parameter-entities");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::isStandaloneFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/is-standalone");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::lexicalHandlerParameterEntitiesFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/lexical-handler/parameter-entities");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::resolveDTDURIsFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/resolve-dtd-uris");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::stringInterningFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/string-interning");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::useAttributes2Feature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/use-attributes2");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::useLocator2Feature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/use-locator2");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::useEntityResolver2Feature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/use-entity-resolver2");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::validationFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/validation");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::unicodeNormalizationCheckingFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/unicode-normalization-checking");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::xmlnsURIsFeature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/xmlns-uris");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::XML11Feature = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/features/xml-1.1");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::ignoreBogonsFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/ignore-bogons");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::bogonsEmptyFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/bogons-empty");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::rootBogonsFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/root-bogons");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::defaultAttributesFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/default-attributes");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::translateColonsFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/translate-colons");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::restartElementsFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/restart-elements");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::ignorableWhitespaceFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/ignorable-whitespace");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::CDATAElementsFeature = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/features/cdata-elements");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::lexicalHandlerProperty = Taggle<string_type, string_adaptor_type>::S("http://xml.org/sax/properties/lexical-handler");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::scannerProperty = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/properties/scanner");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::schemaProperty = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/properties/schema");
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::autoDetectorProperty = Taggle<string_type, string_adaptor_type>::S("http://www.ccil.org/~cowan/tagsoup/properties/auto-detector");
+template <class string_adaptor>
+class Taggle<std::string, string_adaptor> : public TaggleBase<std::string, string_adaptor> {
+private:
+  virtual void convert_stream(
+      std::istream& in, std::basic_stringstream<char> &out) {
+    out << in.rdbuf();
+  }
+};
 
-template<class string_type, class string_adaptor_type>
-const string_type Taggle<string_type, string_adaptor_type>::legal =
-  Taggle<string_type, string_adaptor_type>::S("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'()+,./:=?;!*#@$_%");
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_NAMESPACES = true;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_IGNORE_BOGONS = false;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_BOGONS_EMPTY = false;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_ROOT_BOGONS = true;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_DEFAULT_ATTRIBUTES = true;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_TRANSLATE_COLONS = false;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_RESTART_ELEMENTS = true;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_IGNORABLE_WHITESPACE = false;
+template<class string_type, class string_adaptor>
+bool TaggleBase<string_type, string_adaptor>::DEFAULT_CDATA_ELEMENTS = true;
+
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::namespacesFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/namespaces");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::namespacePrefixesFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/namespace-prefixes");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::externalGeneralEntitiesFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/external-general-entities");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::externalParameterEntitiesFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/external-parameter-entities");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::isStandaloneFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/is-standalone");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::lexicalHandlerParameterEntitiesFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/lexical-handler/parameter-entities");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::resolveDTDURIsFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/resolve-dtd-uris");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::stringInterningFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/string-interning");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::useAttributes2Feature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/use-attributes2");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::useLocator2Feature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/use-locator2");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::useEntityResolver2Feature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/use-entity-resolver2");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::validationFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/validation");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::unicodeNormalizationCheckingFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/unicode-normalization-checking");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::xmlnsURIsFeature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/xmlns-uris");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::XML11Feature = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/features/xml-1.1");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::ignoreBogonsFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/ignore-bogons");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::bogonsEmptyFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/bogons-empty");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::rootBogonsFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/root-bogons");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::defaultAttributesFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/default-attributes");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::translateColonsFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/translate-colons");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::restartElementsFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/restart-elements");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::ignorableWhitespaceFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/ignorable-whitespace");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::CDATAElementsFeature = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/features/cdata-elements");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::lexicalHandlerProperty = TaggleBase<string_type, string_adaptor>::S("http://xml.org/sax/properties/lexical-handler");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::scannerProperty = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/properties/scanner");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::schemaProperty = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/properties/schema");
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::autoDetectorProperty = TaggleBase<string_type, string_adaptor>::S("http://www.ccil.org/~cowan/tagsoup/properties/auto-detector");
+
+template<class string_type, class string_adaptor>
+const string_type TaggleBase<string_type, string_adaptor>::legal =
+  TaggleBase<string_type, string_adaptor>::S("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'()+,./:=?;!*#@$_%");
 
 } // namespace SAX
 

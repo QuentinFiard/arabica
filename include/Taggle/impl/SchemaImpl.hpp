@@ -1,10 +1,12 @@
 #ifndef ARABICA_SAX_TAGGLE_SCHEMAIMPL_HPP
 #define ARABICA_SAX_TAGGLE_SCHEMAIMPL_HPP
 
-#include <map>
-#include <string>
-#include <algorithm>
 #include <cctype>
+#include <algorithm>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <Arabica/StringAdaptor.hpp>
 #include "ElementType.hpp"
 #include "Schema.hpp"
 
@@ -19,23 +21,31 @@ Actual TSSL schemas are compiled into concrete subclasses of this class.
 
 Based on code from John Cowan's super TagSoup package
 **/
-class SchemaImpl : public Schema
+template<class string_type,
+         class string_adaptor = Arabica::default_string_adaptor<string_type> >
+class SchemaImpl : public Schema<string_type, string_adaptor>
 {
-private:
-  std::map<std::string, int> entities_;
-  std::map<std::string, ElementType*> elementTypes_;
+public:
+  typedef ElementType<string_type, string_adaptor> ElementTypeT;
+  typedef Schema<string_type, string_adaptor> SchemaT;
+  using SchemaT::M_ANY;
+  using SchemaT::M_EMPTY;
+  using SchemaT::M_PCDATA;
+  using SchemaT::M_ROOT;
 
-	std::string URI_;
-	std::string prefix_;
-	ElementType* root_;
+  using SchemaT::F_RESTART;
+  using SchemaT::F_CDATA;
+  using SchemaT::F_NOFORCE;
+
+private:
+  std::map<string_type, int> entities_;
+  std::map<string_type, std::unique_ptr<ElementTypeT> > elementTypes_;
+
+	string_type URI_;
+	string_type prefix_;
+	ElementTypeT* root_;
 
 public:
-  virtual ~SchemaImpl()
-  {
-    for(std::map<std::string, ElementType*>::iterator i = elementTypes_.begin(), ie = elementTypes_.end(); i != ie; ++i)
-      delete i->second;
-  } // ~SchemaImpl
-
 	/**
 	Add or replace an element type for this schema.
 	@param name Name (Qname) of the element
@@ -43,19 +53,19 @@ public:
 	@param memberOf Models the element is a member of as a vector of bits
 	@param flags Flags for the element
 	**/
-	void elementType(const std::string& name, int model, int memberOf, int flags) 
+	void elementType(const string_type& name, int model, int memberOf, int flags)
   {
-		ElementType* e = new ElementType(name, model, memberOf, flags, *this);
-    std::string lname = lower_case(name);
-		elementTypes_[lname] = e;
+		std::unique_ptr<ElementTypeT> e(new ElementTypeT(name, model, memberOf, flags, *this));
+    string_type lname = lower_case(name);
+		elementTypes_[lname] = std::move(e);
 		if(memberOf == M_ROOT)
-      root_ = elementTypes_[lname];
+      root_ = elementTypes_[lname].get();
 	} // elementType
 
 	/**
 	Get the root element of this schema
 	**/
-	ElementType& rootElementType() 
+	ElementTypeT& rootElementType()
   {
 		return *root_;
 	} // rootElementType
@@ -67,14 +77,15 @@ public:
 	@param type Type of the attribute
 	@param value Default value of the attribute; null if no default
 	**/
-	void attribute(const std::string& elemName, const std::string& attrName, const std::string& type, const std::string& value) 
+	void attribute(const string_type& elemName, const string_type& attrName, const string_type& type, const string_type& value)
   {
-		ElementType& e = getElementType(elemName);
-    if (e == ElementType::Null) 
+		ElementTypeT& e = getElementType(elemName);
+    if (e == ElementTypeT::Null)
     {
-      throw std::runtime_error("Attribute " + attrName +
-				" specified for unknown element type " +
-				elemName);
+      throw std::runtime_error(
+          "Attribute " + string_adaptor::asStdString(attrName) +
+				  " specified for unknown element type " +
+				  string_adaptor::asStdString(elemName));
 		}
 		e.setAttribute(attrName, type, value);
 	} // attribute
@@ -84,17 +95,21 @@ public:
 	@param name Name of the child element
 	@param parentName Name of the parent element
 	**/
-	void parent(std::string name, std::string parentName) 
+	void parent(const string_type& name, const string_type& parentName)
   {
-		ElementType& child = getElementType(name);
-		ElementType& parent = getElementType(parentName);
-    if (child == ElementType::Null) 
+		ElementTypeT& child = getElementType(name);
+		ElementTypeT& parent = getElementType(parentName);
+    if (child == ElementTypeT::Null)
     {
-      throw std::runtime_error("No child " + name + " for parent " + parentName);
+      throw std::runtime_error(
+          "No child " + string_adaptor::asStdString(name) + " for parent " +
+          string_adaptor::asStdString(parentName));
 		}
-		if (parent == ElementType::Null) 
+		if (parent == ElementTypeT::Null)
     {
-			throw std::runtime_error("No parent " + parentName + " for child " + name);
+			throw std::runtime_error(
+          "No parent " + string_adaptor::asStdString(parentName) +
+          " for child " + string_adaptor::asStdString(name));
 		}
 		child.setParent(parent);
 	} // parent
@@ -104,21 +119,21 @@ public:
 	@param name Name of the entity
 	@param value Value of the entity
 	**/
-	void entity(const std::string& name, int value) 
+	void entity(const string_type& name, int value)
   {
 		entities_[name] = value;
 	} // entity
 
 	/**
-	Get an ElementType by name.
+	Get an ElementTypeT by name.
 	@param name Name (Qname) of the element type
-	@return The corresponding ElementType
+	@return The corresponding ElementTypeT
 	**/
-	ElementType& getElementType(const std::string& name)
+	ElementTypeT& getElementType(const string_type& name)
   {
-    std::map<std::string, ElementType*>::iterator elemType = elementTypes_.find(lower_case(name));
+    const auto &elemType = elementTypes_.find(lower_case(name));
     if(elemType == elementTypes_.end())
-      return ElementType::Null;
+      return ElementTypeT::Null;
     return *elemType->second;
 	} // getElementType
 
@@ -127,9 +142,9 @@ public:
 	@param name Name of the entity
 	@return The corresponding character, or 0 if none
 	**/
-	int getEntity(const std::string& name) const
+	int getEntity(const string_type& name) const
   {
-    std::map<std::string, int>::const_iterator ent = entities_.find(name);
+    const auto &ent = entities_.find(name);
     if(ent == entities_.end())
       return 0;
 		return ent->second;
@@ -138,7 +153,7 @@ public:
 	/**
 	Return the URI (namespace name) of this schema.
 	**/
-	const std::string& getURI() const
+	const string_type& getURI() const
   {
 		return URI_;
 	} // getURI
@@ -146,7 +161,7 @@ public:
 	/**
 	Return the prefix of this schema.
 	**/
-	const std::string& getPrefix() const
+	const string_type& getPrefix() const
   {
 		return prefix_;
 	} // getPrefix
@@ -154,7 +169,7 @@ public:
 	/**
 	Change the URI (namespace name) of this schema.
 	**/
-	void setURI(std::string uri) 
+	void setURI(const string_type &uri)
   {
 		URI_ = uri;
 	} // setURI
@@ -162,17 +177,17 @@ public:
 	/**
 	Change the prefix of this schema.
 	**/
-	void setPrefix(std::string prefix) 
+	void setPrefix(const string_type &prefix)
   {
 		prefix_ = prefix;
 	} // setPrefix
 
 private:
-  static std::string lower_case(const std::string& str) 
+  static string_type lower_case(const string_type& str)
   {
-    std::string lower;
-    std::transform(str.begin(), str.end(), std::back_inserter(lower), (int(*)(int))std::tolower);
-    return lower;
+    std::wstring lower = string_adaptor::asStdWString(str);
+    std::transform(lower.begin(), lower.end(), lower.begin(), std::towlower);
+    return string_adaptor::construct_from_utf16(lower.c_str(), lower.size());
   } // lower_case
 }; // class Schema
 

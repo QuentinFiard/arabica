@@ -35,7 +35,7 @@ if(NOT ARABICA_XML_BACKEND)
   endif()
 endif()
 
-# turn off windows options 
+# turn off windows options
 if(NOT WIN32)
   set(NO_WINDOWS)
 endif()
@@ -266,7 +266,6 @@ set(PUBLIC_HEADER_FILES
   ../include/io/socket_stream.hpp
   ../include/io/uri.hpp
   ../include/convert/base64codecvt.hpp
-  ../include/convert/deletable_facet.hpp
   ../include/convert/impl/codecvt_specialisations.hpp
   ../include/convert/impl/iso88591_utf8.hpp
   ../include/convert/iso88591utf8codecvt.hpp
@@ -377,7 +376,6 @@ set(SOURCE_FILES
   ../src/convert/utf16utf8codecvt.cpp
   ../src/convert/utf8iso88591codecvt.cpp
   ../src/convert/utf8ucs2codecvt.cpp
-  ../src/taggle/Schema.cpp
 )
 source_group("Source Files" FILES ${SOURCE_FILES})
 

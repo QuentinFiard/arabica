@@ -2,13 +2,13 @@
 #define ARABICA_SAX_SCANNER_HPP
 
 #include <istream>
-#include <string>
 
 namespace Arabica
 {
 namespace SAX
 {
 
+template<class string_type, class string_adaptor>
 class ScanHandler;
 
 /**
@@ -16,9 +16,13 @@ class ScanHandler;
 
   This code is derived from John Cowan's splendid TagSoup package
 */
+template<class string_type,
+         class string_adaptor = Arabica::default_string_adaptor<string_type> >
 class Scanner 
 {
 public:
+  typedef ScanHandler<string_type, string_adaptor> ScanHandlerT;
+
   virtual ~Scanner() {}
 
 	/**
@@ -26,14 +30,16 @@ public:
 	@param r A source of characters to scan
 	@param h A ScanHandler to report events to
 	**/
-	virtual void scan(std::istream& r, ScanHandler& h) = 0;
+	virtual void scan(std::basic_istream<typename string_type::value_type>& r,
+                    ScanHandlerT& h) = 0;
 
 	/**
 	Reset the embedded locator.
 	@param publicid The publicid of the source
 	@param systemid The systemid of the source
 	**/
-  virtual void resetDocumentLocator(const std::string& publicid, const std::string& systemid) = 0;
+  virtual void resetDocumentLocator(
+      const string_type& publicid, const string_type& systemid) = 0;
 
 	/**
 	Signal to the scanner to start CDATA content mode.

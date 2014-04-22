@@ -3,7 +3,7 @@
   
 #include <locale>
 #include <sstream>
-#include <convert/deletable_facet.hpp>
+#include <Arabica/StringAdaptor.hpp>
 #include <SAX/SAXException.hpp>
 #include <SAX/Locator.hpp>
 #include <XML/XMLCharacterClasses.hpp>
@@ -23,9 +23,18 @@ events to.
 
 Based on code from John Cowan's super TagSoup package
 */
-class HTMLScanner : public Scanner, public SAX::Locator<std::string>
+template<class string_type,
+         class string_adaptor = Arabica::default_string_adaptor<string_type> >
+class HTMLScanner : public Scanner<string_type, string_adaptor>,
+                    public SAX::Locator<string_type, string_adaptor>
 {
 private:
+  typedef HTMLScanner<string_type, string_adaptor> HTMLScannerT;
+  typedef ScanHandler<string_type, string_adaptor> ScanHandlerT;
+  typedef typename string_type::value_type char_type;
+  typedef std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>
+      UnicodeEncoder;
+
   // Start of state table
   static const int S_ANAME = 1;
   static const int S_APOS = 2;
@@ -95,14 +104,14 @@ private:
   static const int A_UNGET = 31;
   static const int A_UNSAVE_PCDATA = 32;
   static const int statetable[]; 
-  static const std::string debug_actionnames[];
-  static const std::string debug_statenames[];
+  static const string_type debug_actionnames[];
+  static const string_type debug_statenames[];
   // End of state table
   static const int WinCharMap[]; // Windows char map
-  static const std::string hexLetters;
+  static const string_type hexLetters;
 
-  std::string publicId_;      // Locator state
-  std::string systemId_;
+  string_type publicId_;      // Locator state
+  string_type systemId_;
   size_t lastLine_;
   size_t lastColumn_;
   size_t currentLine_;
@@ -110,7 +119,7 @@ private:
 
   int state_;          // Current state
   int nextState_;        // Next state
-  std::string outputBuffer_;  // Output buffer
+  string_type outputBuffer_;  // Output buffer
 
   // Compensate for bug in PushbackReader that allows
   // pushing back EOF.
@@ -119,6 +128,32 @@ private:
   //  }
 
 public:
+  static constexpr string_type S(const std::string& s)
+  {
+    return string_adaptor::construct_from_utf8(s.c_str());
+  } // S
+
+  static constexpr string_type S(const char* s)
+  {
+    return string_adaptor::construct_from_utf8(s);
+  } // S
+
+  static wchar_t ToWChar(char_type c) {
+    return string_adaptor::asStdWString(string_type(1, c))[0];
+  }
+
+  static bool is_digit(char_type c) {
+    return Arabica::XML::is_letter(ToWChar(c));
+  }
+
+  static bool is_letter(char_type c) {
+    return Arabica::XML::is_letter(ToWChar(c));
+  }
+
+  static bool is_letter_or_digit(char_type c) {
+    return Arabica::XML::is_letter_or_digit(ToWChar(c));
+  }
+
   HTMLScanner() :
       publicId_(),
       systemId_(),
@@ -130,7 +165,7 @@ public:
       nextState_(0),
       outputBuffer_()
   {
-    outputBuffer_.reserve(200);
+    string_adaptor::reserve(outputBuffer_, 200);
   } // HTMLScanner
 
   // Locator implementation
@@ -144,12 +179,12 @@ public:
     return lastColumn_;
   } // getColumnNumber
 
-  std::string getPublicId() const 
+  string_type getPublicId() const
   {
     return publicId_;
   } // getPublicId
 
-  std::string getSystemId() const
+  string_type getSystemId() const
   {
     return systemId_;
   } // getSystemId
@@ -161,7 +196,7 @@ public:
   @param systemid System id
   @param publicid Public id
   */
-  virtual void resetDocumentLocator(const std::string& publicid, const std::string& systemid)
+  virtual void resetDocumentLocator(const string_type& publicid, const string_type& systemid)
   {
     publicId_ = publicid;
     systemId_ = systemid;
@@ -173,7 +208,7 @@ public:
   @param r0 Reader that provides characters
   @param h ScanHandler that accepts lexical events.
   */
-  virtual void scan(std::istream& r, ScanHandler& h)
+  virtual void scan(std::basic_istream<char_type>& r, ScanHandlerT& h)
   {
     state_ = S_PCDATA;
 /*    PushbackReader r;
@@ -254,59 +289,62 @@ public:
           }
          case A_ADUP:
           h.adup(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_ADUP_SAVE:
           h.adup(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           save(ch, h);
           break;
         case A_ADUP_STAGC:
           h.adup(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.stagc(outputBuffer_);
           break;
         case A_ANAME:
           h.aname(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_ANAME_ADUP:
           h.aname(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.adup(outputBuffer_);
           break;
         case A_ANAME_ADUP_STAGC:
           h.aname(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.adup(outputBuffer_);
           h.stagc(outputBuffer_);
           break;
         case A_AVAL:
           h.aval(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_AVAL_STAGC:
           h.aval(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.stagc(outputBuffer_);
           break;
         case A_CDATA:
-          mark();
-          // suppress the final "]]" in the buffer
-          if (outputBuffer_.size() > 1) 
-            outputBuffer_.erase(outputBuffer_.size()-2);
-          h.pcdata(outputBuffer_);
-          outputBuffer_.clear();
-          break;
+          {
+            mark();
+            // suppress the final "]]" in the buffer
+            std::size_t length = string_adaptor::length(outputBuffer_);
+            if (length > 1)
+              string_adaptor::erase(outputBuffer_, length - 2);
+            h.pcdata(outputBuffer_);
+            string_adaptor::clear(outputBuffer_);
+            break;
+          }
         case A_ENTITY_START:
           h.pcdata(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           save(ch, h);
           break;
         case A_ENTITY:
           {
             mark();
-            char ch1 = (char)ch;
+            char_type ch1 = ch;
   //        System.out.println("Got " + ch1 + " in state " + ((state_ == S_ENT) ? "S_ENT" : ((state_ == S_NCR) ? "S_NCR" : "UNK")));
             if (state_ == S_ENT && ch1 == '#') 
             {
@@ -320,28 +358,28 @@ public:
               save(ch, h);
               break;
             }
-            else if (state_ == S_ENT && XML::is_letter_or_digit(ch1)) 
+            else if (state_ == S_ENT && is_letter_or_digit(ch1))
             {
               save(ch, h);
               break;
             }
-            else if (state_ == S_NCR && XML::is_digit(ch1)) 
+            else if (state_ == S_NCR && is_digit(ch1))
             {
               save(ch, h);
               break;
             }
-            else if (state_ == S_XNCR && (XML::is_digit(ch1) || hexLetters.find(ch1) != std::string::npos)) 
+            else if (state_ == S_XNCR && (is_digit(ch1) || string_adaptor::find(hexLetters, ch1) != string_adaptor::npos()))
             {
               save(ch, h);
               break;
             }
 
             // The whole entity reference has been collected
-            h.entity(outputBuffer_.substr(1, outputBuffer_.size()-1));
+            h.entity(string_adaptor::substr(outputBuffer_, 1, string_adaptor::length(outputBuffer_) - 1));
             int ent = h.getEntity();
             if (ent != 0) 
             {
-              outputBuffer_.clear();
+              string_adaptor::clear(outputBuffer_);
               if (ent >= 0x80 && ent <= 0x9F) 
               {
                 //ent = WinCharMap[ent-0x80];
@@ -368,19 +406,19 @@ public:
           break;
         case A_ETAG:
           h.etag(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_DECL:
           h.decl(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_GI:
           h.gi(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_GI_STAGC:
           h.gi(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.stagc(outputBuffer_);
           break;
         case A_LT:
@@ -392,17 +430,17 @@ public:
           mark();
           save('<', h);
           h.pcdata(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_PCDATA:
           mark();
           h.pcdata(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_CMNT:
           mark();
           h.cmnt(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_MINUS3:
           save('-', h);
@@ -419,15 +457,15 @@ public:
         case A_PI:
           mark();
           h.pi(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_PITARGET:
           h.pitarget(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_PITARGET_PI:
           h.pitarget(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.pi(outputBuffer_);
           break;
         case A_SAVE:
@@ -440,13 +478,13 @@ public:
           break;
         case A_STAGC:
           h.stagc(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         case A_EMPTYTAG:
           mark();
-          if (outputBuffer_.size() > 0) 
+          if (!string_adaptor::empty(outputBuffer_))
             h.gi(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           h.stage(outputBuffer_);
           break;
         case A_UNGET:
@@ -454,10 +492,11 @@ public:
           currentColumn_--;
           break;
         case A_UNSAVE_PCDATA:
-         if (outputBuffer_.size() > 0) 
-           outputBuffer_.erase(outputBuffer_.size()-1);
+          if (!string_adaptor::empty(outputBuffer_))
+            string_adaptor::erase(
+                outputBuffer_, string_adaptor::length(outputBuffer_) - 1);
           h.pcdata(outputBuffer_);
-          outputBuffer_.clear();
+          string_adaptor::clear(outputBuffer_);
           break;
         default:
           throw std::runtime_error(
@@ -466,7 +505,7 @@ public:
       } // switch ...
       state_ = nextState_;
     } // while (state_ != S_DONE) 
-    h.eof("");
+    h.eof(string_adaptor::empty_string());
   } // scan
 
   /**
@@ -490,28 +529,27 @@ private:
     lastLine_ = currentLine_;
   } // mark
 
-  void save(int ch, ScanHandler& h)
+  void save(int ch, ScanHandlerT& h)
   {
-    if (outputBuffer_.size() >= outputBuffer_.capacity() - 20) 
+    if (string_adaptor::length(outputBuffer_) >= string_adaptor::capacity(outputBuffer_) - 20)
     {
       if (state_ == S_PCDATA || state_ == S_CDATA) 
       {
         // Return a buffer-sized chunk of PCDATA
         h.pcdata(outputBuffer_);
-        outputBuffer_.clear();
+        string_adaptor::clear(outputBuffer_);
       }
     }
-    outputBuffer_ += std::wstring_convert<convert::deletable_facet<
-        std::codecvt<char32_t, char, std::mbstate_t> >, char32_t>().to_bytes(ch);
+    outputBuffer_ += S(UnicodeEncoder().to_bytes(ch));
   } // save
 
-  static std::string nicechar(int in) 
+  static string_type nicechar(int in)
   {
     if (in == '\n') 
-      return "\\n";
-    std::ostringstream os;
+      return S("\\n");
+    std::basic_stringstream<char_type> os;
     if(in >= 32) 
-      os << '\'' << static_cast<char>(in) << '\'';
+      os << '\'' << static_cast<char_type>(in) << '\'';
     else
       os << std::hex << std::showbase << in;
     return os.str();
@@ -519,10 +557,13 @@ private:
 
   HTMLScanner(const HTMLScanner&);
   bool operator==(const HTMLScanner&) const;
-  HTMLScanner& operator=(const HTMLScanner&);
+  HTMLScannerT& operator=(const HTMLScannerT&);
 }; // class HTMLScanner
 
-const int HTMLScanner::statetable[] = {
+#define S HTMLScanner<string_type, string_adaptor>::S
+
+template <class string_type, class string_adaptor>
+const int HTMLScanner<string_type, string_adaptor>::statetable[] = {
     S_ANAME, '/', A_ANAME_ADUP, S_EMPTYTAG,
     S_ANAME, '=', A_ANAME, S_AVAL,
     S_ANAME, '>', A_ANAME_ADUP_STAGC, S_PCDATA,
@@ -674,17 +715,23 @@ const int HTMLScanner::statetable[] = {
     -1, -1, -1, -1
 }; // HTMLScanner::statetable
 
-const std::string HTMLScanner::debug_actionnames[] = { "", "A_ADUP", "A_ADUP_SAVE", "A_ADUP_STAGC", "A_ANAME", "A_ANAME_ADUP", "A_ANAME_ADUP_STAGC", "A_AVAL", "A_AVAL_STAGC", "A_CDATA", "A_CMNT", "A_DECL", "A_EMPTYTAG", "A_ENTITY", "A_ENTITY_START", "A_ETAG", "A_GI", "A_GI_STAGC", "A_LT", "A_LT_PCDATA", "A_MINUS", "A_MINUS2", "A_MINUS3", "A_PCDATA", "A_PI", "A_PITARGET", "A_PITARGET_PI", "A_SAVE", "A_SKIP", "A_SP", "A_STAGC", "A_UNGET", "A_UNSAVE_PCDATA"};
-const std::string HTMLScanner::debug_statenames[] = { "", "S_ANAME", "S_APOS", "S_AVAL", "S_BB", "S_BBC", "S_BBCD", "S_BBCDA", "S_BBCDAT", "S_BBCDATA", "S_CDATA", "S_CDATA2", "S_CDSECT", "S_CDSECT1", "S_CDSECT2", "S_COM", "S_COM2", "S_COM3", "S_COM4", "S_DECL", "S_DECL2", "S_DONE", "S_EMPTYTAG", "S_ENT", "S_EQ", "S_ETAG", "S_GI", "S_NCR", "S_PCDATA", "S_PI", "S_PITARGET", "S_QUOT", "S_STAGC", "S_TAG", "S_TAGWS", "S_XNCR"};
+template <class string_type, class string_adaptor>
+const string_type HTMLScanner<string_type, string_adaptor>::debug_actionnames[] = { S(""), S("A_ADUP"), S("A_ADUP_SAVE"), S("A_ADUP_STAGC"), S("A_ANAME"), S("A_ANAME_ADUP"), S("A_ANAME_ADUP_STAGC"), S("A_AVAL"), S("A_AVAL_STAGC"), S("A_CDATA"), S("A_CMNT"), S("A_DECL"), S("A_EMPTYTAG"), S("A_ENTITY"), S("A_ENTITY_START"), S("A_ETAG"), S("A_GI"), S("A_GI_STAGC"), S("A_LT"), S("A_LT_PCDATA"), S("A_MINUS"), S("A_MINUS2"), S("A_MINUS3"), S("A_PCDATA"), S("A_PI"), S("A_PITARGET"), S("A_PITARGET_PI"), S("A_SAVE"), S("A_SKIP"), S("A_SP"), S("A_STAGC"), S("A_UNGET"), S("A_UNSAVE_PCDATA")};
+template <class string_type, class string_adaptor>
+const string_type HTMLScanner<string_type, string_adaptor>::debug_statenames[] = { S(""), S("S_ANAME"), S("S_APOS"), S("S_AVAL"), S("S_BB"), S("S_BBC"), S("S_BBCD"), S("S_BBCDA"), S("S_BBCDAT"), S("S_BBCDATA"), S("S_CDATA"), S("S_CDATA2"), S("S_CDSECT"), S("S_CDSECT1"), S("S_CDSECT2"), S("S_COM"), S("S_COM2"), S("S_COM3"), S("S_COM4"), S("S_DECL"), S("S_DECL2"), S("S_DONE"), S("S_EMPTYTAG"), S("S_ENT"), S("S_EQ"), S("S_ETAG"), S("S_GI"), S("S_NCR"), S("S_PCDATA"), S("S_PI"), S("S_PITARGET"), S("S_QUOT"), S("S_STAGC"), S("S_TAG"), S("S_TAGWS"), S("S_XNCR")};
 
-const int HTMLScanner::WinCharMap[] = {        // Windows chars map
+template <class string_type, class string_adaptor>
+const int HTMLScanner<string_type, string_adaptor>::WinCharMap[] = {        // Windows chars map
     0x20AC, 0xFFFD, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
     0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0xFFFD, 0x017D, 0xFFFD,
     0xFFFD, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
     0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0xFFFD, 0x017E, 0x0178
 }; // HTMLScanner::WinCharMap
 
-const std::string HTMLScanner::hexLetters = "abcdefABCDEF";
+template <class string_type, class string_adaptor>
+const string_type HTMLScanner<string_type, string_adaptor>::hexLetters = S("abcdefABCDEF");
+
+#undef S
 
 } // namespace SAX
 

@@ -1,6 +1,7 @@
 #ifndef ARABICA_SAX_ELEMENT_TYPE_HPP
 #define ARABICA_SAX_ELEMENT_TYPE_HPP
 
+#include <Arabica/StringAdaptor.hpp>
 #include <SAX/helpers/AttributesImpl.hpp>
 #include <text/normalize_whitespace.hpp>
 #include "Schema.hpp"
@@ -20,27 +21,47 @@ a flags vector, default attributes, and a schema to which it belongs.
 Based on code from John Cowan's super TagSoup package
 @see Schema
 */
+template <class string_type,
+          class string_adaptor = Arabica::default_string_adaptor<string_type> >
 class ElementType 
 {
 private:
-	std::string name_;		// element type name (Qname)
-	std::string namespace_;	// element type namespace name
-	std::string localName_;	// element type local name
+  typedef ElementType<string_type, string_adaptor> ElementTypeT;
+  typedef Schema<string_type, string_adaptor> SchemaT;
+
+  static typename string_type::value_type S(char c)
+  {
+    return string_adaptor::construct_from_utf8(&c, 1)[0];
+  } // S
+
+  static string_type S(const std::string& s)
+  {
+    return string_adaptor::construct_from_utf8(s.c_str(), s.size());
+  } // S
+
+  static string_type S(const char* s)
+  {
+    return string_adaptor::construct_from_utf8(s);
+  } // S
+
+	string_type name_;		// element type name (Qname)
+	string_type namespace_;	// element type namespace name
+	string_type localName_;	// element type local name
 	int model_;		// bitmap: what the element contains
 	int memberOf_;	// bitmap: what element is contained in
 	int flags_;		// bitmap: element flags
-	AttributesImpl<std::string> atts_;	// default attributes
-	ElementType* parent_;	// parent of this element type
-	Schema* schema_;	// schema to which this belongs
+	AttributesImpl<string_type, string_adaptor> atts_;  // default attributes
+	ElementTypeT* parent_;	// parent of this element type
+	SchemaT* schema_;	// schema to which this belongs
 
 public:
-  static ElementType Null;
+  static ElementTypeT Null;
 
 private:
   ElementType() :
-    name_("<null>"),
-    namespace_("<null>"),
-    localName_("<null>"),
+    name_(S("<null>")),
+    namespace_(S("<null>")),
+    localName_(S("<null>")),
     model_(0),
     memberOf_(0),
     flags_(0),
@@ -64,7 +85,7 @@ private:
 	@param schema The schema with which this element type will be
 	associated
 	*/
-	ElementType(const std::string& name, int model, int memberOf, int flags, Schema& schema) :
+	ElementType(const string_type& name, int model, int memberOf, int flags, SchemaT& schema) :
     name_(name),
     namespace_(),
     localName_(),
@@ -78,7 +99,7 @@ private:
     localName_ = localName(name);
   } // ElementType
 
-	ElementType(const ElementType& rhs) :
+	ElementType(const ElementTypeT& rhs) :
     name_(rhs.name_),
     namespace_(rhs.namespace_),
     localName_(rhs.localName_),
@@ -90,6 +111,7 @@ private:
   {
   } // ElementType
 
+  template <class string_type2, class string_adaptor2>
   friend class SchemaImpl;
 
 public:
@@ -101,17 +123,19 @@ public:
 	@param attribute True if name is an attribute name
 	@return The namespace name
 	**/
-	std::string namespaceName(const std::string& name, bool attribute) const
+	string_type namespaceName(const string_type& name, bool attribute) const
   {
-		size_t colon = name.find(':');
-    if (colon == std::string::npos) 
-			return attribute ? "" : schema_->getURI();
+		size_t colon = string_adaptor::find(name, S(':'));
+    if (colon == string_adaptor::npos())
+			return attribute ? string_adaptor::empty_string() : schema_->getURI();
 
-		std::string prefix = name.substr(0, colon);
-		if (prefix == "xml") 
-			return "http://www.w3.org/XML/1998/namespace";
+		string_type prefix = string_adaptor::substr(name, 0, colon);
+		if (prefix == S("xml"))
+			return S("http://www.w3.org/XML/1998/namespace");
 		else 
-			return "urn:x-prefix:" + prefix;
+    {
+      return string_adaptor::concat(S("urn:x-prefix:"), prefix);
+    }
   } // namespaceName
 
 	/**
@@ -119,32 +143,32 @@ public:
 	@param name The Qname
 	@return The local name
 	**/
-	std::string localName(const std::string& name) const
+	string_type localName(const string_type& name) const
   {
-		size_t colon = name.find(':');
-    if (colon == std::string::npos) 
+		size_t colon = string_adaptor::find(name, S(':'));
+    if (colon == string_adaptor::npos())
 			return name;
 		else 
-			return name.substr(colon+1);
+			return string_adaptor::substr(name, colon+1);
   } // localName
 
 	/**
 	Returns the name of this element type.
 	@return The name of the element type
 	*/
-	std::string name() const { return name_; }
+	string_type name() const { return name_; }
 
 	/**
 	Returns the namespace name of this element type.
 	@return The namespace name of the element type
 	*/
-	std::string namespaceName() const { return namespace_; }
+	string_type namespaceName() const { return namespace_; }
 
 	/**
 	Returns the local name of this element type.
 	@return The local name of the element type
 	*/
-	std::string localName() const { return localName_; }
+	string_type localName() const { return localName_; }
 
 	/**
 	Returns the content models of this element type.
@@ -173,13 +197,13 @@ public:
 	The return value is an AttributesImpl to allow the caller to mutate
 	the attributes.
 	*/
-	const AttributesImpl<std::string>& atts() const { return atts_; }
+	const AttributesImpl<string_type, string_adaptor>& atts() const { return atts_; }
 
 	/**
 	Returns the parent element type of this element type.
 	@return The parent element type
 	*/
-	ElementType& parent() const 
+	ElementTypeT& parent() const
   {
     return *parent_;
   } // parent
@@ -188,7 +212,7 @@ public:
 	Returns the schema which this element type is associated with.
 	@return The schema
 	*/
-	Schema& schema() const 
+	SchemaT& schema() const
   { 
     return *schema_; 
   } // schema
@@ -201,7 +225,7 @@ public:
 	vector.
 	@param other The other element type
 	*/
-	bool canContain(const ElementType& other) const
+	bool canContain(const ElementTypeT& other) const
   {
 		return (model_ & other.memberOf_) != 0;
   } // canContain
@@ -215,36 +239,36 @@ public:
 	@param type The type of the attribute
 	@param value The value of the attribute
 	*/
-	void setAttribute(AttributesImpl<std::string>& atts, 
-                    const std::string& name, 
-                    const std::string& type, 
-                    const std::string& value) 
+	void setAttribute(AttributesImpl<string_type, string_adaptor>& atts,
+                    const string_type& name,
+                    const string_type& type,
+                    const string_type& value)
   {
-		if (name == "xmlns" || name.find("xmlns:") == 0) 
+		if (name == S("xmlns") || string_adaptor::find(name, S("xmlns:")) == 0)
     {
 			return;
     }
 
-		std::string namespaceN = namespaceName(name, true);
-		std::string localN = localName(name);
-    std::string actualType = type;
-    std::string actualValue = value;
+		string_type namespaceN = namespaceName(name, true);
+		string_type localN = localName(name);
+    string_type actualType = type;
+    string_type actualValue = value;
 
 		int i = atts.getIndex(name);
 		if (i == -1) 
     {
-			if (actualType == "") 
-        actualType = "CDATA";
-			if (actualType != "CDATA") 
-        actualValue = Arabica::text::normalize_whitespace<std::string, Arabica::default_string_adaptor<std::string> >(value);
+			if (string_adaptor::empty(actualType))
+        actualType = S("CDATA");
+			if (actualType != S("CDATA"))
+        actualValue = Arabica::text::normalize_whitespace<string_type, string_adaptor>(value);
 			atts.addAttribute(namespaceN, localN, name, actualType, actualValue);
     }
 		else 
     {
-			if (actualType == "")
+			if (string_adaptor::empty(actualType))
         actualType = atts.getType(i);
-			if (actualType != ("CDATA")) 
-        actualValue = Arabica::text::normalize_whitespace<std::string, Arabica::default_string_adaptor<std::string> >(value);
+			if (actualType != S("CDATA"))
+        actualValue = Arabica::text::normalize_whitespace<string_type, string_adaptor>(value);
 			atts.setAttribute(i, namespaceN, localN, name, actualType, actualValue);
     }
   } // setAttribute
@@ -255,7 +279,7 @@ public:
 	@param type The type of the attribute
 	@param value The value of the attribute
 	*/
-	void setAttribute(const std::string& name, const std::string& type, const std::string& value) 
+	void setAttribute(const string_type& name, const string_type& type, const string_type& value)
   {
 		setAttribute(atts_, name, type, value);
   } // setAttribute
@@ -291,12 +315,12 @@ public:
 	Sets the parent element type of this element type.
 	@param parent The parent element type
 	*/
-	void setParent(ElementType& parent)
+	void setParent(ElementTypeT& parent)
   { 
     parent_ = &parent; 
   } // setParent
 
-  bool operator==(const ElementType& rhs) const
+  bool operator==(const ElementTypeT& rhs) const
   {
     return (name_ == rhs.name_) &&
            (namespace_ == rhs.namespace_) && 
@@ -308,7 +332,7 @@ public:
            (schema_ == rhs.schema_);
   } // operator ==
 
-  ElementType& operator=(const ElementType& rhs)
+  ElementTypeT& operator=(const ElementTypeT& rhs)
   {
     name_ = rhs.name_;
     namespace_ = rhs.namespace_;
@@ -324,7 +348,8 @@ public:
   } // operator=
 }; // class ElementType
 
-ElementType ElementType::Null;
+template <class string_type, class string_adaptor>
+ElementType<string_type, string_adaptor> ElementType<string_type, string_adaptor>::Null;
 
 } // namespace SAX
 
